@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from finance.ohlcv import OHLCV
 import numpy as np
 from typing import Optional
+import pandas as pd
 
 @dataclass
 class PortfolioFeatures:
@@ -28,7 +29,7 @@ class Account:
     initial_balance: float
     fee_open_percent: float = 0.001
     fee_close_percent: float = 0.001
-    adjust_impact_coeff: float = 0.1  # Coefficient to adjust market impact cost
+    adjust_impact_coeff: float = 0.05  # Coefficient to adjust market impact cost
     noise_stddev: float = 0.05  # Standard deviation for stochastic slippage
     balance: float = field(init=False, default=0.0)
     crypto_quantity: float = field(init=False, default=0.0)
@@ -38,25 +39,36 @@ class Account:
     total_trades: int = field(init=False, default=0)
     np_random: np.random.Generator = field(init=False)
     prev_equity: float = field(init=False)
+    prices: list[dict[str, float]] = field(init=False, default_factory=list)
+    counter: int = field(init=False, default=0)
     
     def __post_init__(self):
         self.balance = self.initial_balance
         self.equity = self.initial_balance
         self.prev_equity = self.initial_balance
-        self.np_random = np.random.default_rng()
     
-    def reset(self, seed: Optional[int] = None):
+    def reset(self, np_random: np.random.Generator):
         """Reset the account to its initial state.
         """
-        if seed is not None:
-            self.np_random = np.random.default_rng(seed)
+        self.np_random = np_random
         self.balance = self.initial_balance
         self.crypto_quantity = 0.0
         self.equity = self.initial_balance
         self.fee_open_total = 0.0
         self.fee_close_total = 0.0
         self.total_trades = 0
-    
+        if self.counter > 0:
+            self.write_prices_to_csv()
+        self.prices = []
+        self.counter += 1
+
+    def write_prices_to_csv(self):
+        """Write the account data to a CSV file.
+        """
+        filename = f"prices_{self.counter}.csv"
+        df = pd.DataFrame(self.prices)
+        df.to_csv(filename, index=False)
+
     def step(self, a: float, ohlcv: OHLCV):
         """interface for agent to perform an order
 
@@ -69,6 +81,8 @@ class Account:
         price_close = ohlcv.close  # Using close price as the closing price for the trade
         self.prev_equity = self.equity
 
+        price_entry = price_ideal
+
         if a > 0:  # Buy
             amount_to_spend = self.balance * a
             slippage_cost = self._slippage_and_market_impact_cost(price_ideal, amount_to_spend, ohlcv)
@@ -78,19 +92,26 @@ class Account:
             quantity_received = (amount_to_spend - fee_open) / price_entry
             self.balance -= amount_to_spend
             self.crypto_quantity += quantity_received
-            self.total_trades += 1
+            if quantity_received > 0:
+                self.total_trades += 1
+            self.prices.append({"timestamp": ohlcv.timestamp, "action": a, "price_slippage": price_entry, "price_ideal": price_ideal, "price_close": price_close})
         elif a < 0:  # Sell
-            sign_quantity = self.crypto_quantity * a
-            crypto_to_sell = sign_quantity * -1
-            slippage_cost = self._slippage_and_market_impact_cost(price_ideal, sign_quantity, ohlcv)
+            crypto_sell = self.crypto_quantity * a * -1
+            balance_ideal = crypto_sell * price_ideal
+            slippage_cost = self._slippage_and_market_impact_cost(price_ideal, -balance_ideal, ohlcv)
             price_exit = price_ideal - slippage_cost
-            fee_close = crypto_to_sell * price_exit * self.fee_close_percent
+            balance_received = crypto_sell * price_exit
+            fee_close = balance_received * self.fee_close_percent
+            balance_received -= fee_close
             self.fee_close_total += fee_close
-            balance_received = crypto_to_sell * price_exit * (1 - self.fee_close_percent)
             self.balance += balance_received
-            self.crypto_quantity -= crypto_to_sell
-            self.total_trades += 1
-
+            self.crypto_quantity -= crypto_sell
+            if balance_received > 0:
+                self.total_trades += 1
+            self.prices.append({"timestamp": ohlcv.timestamp, "action": a, "price_slippage": price_exit, "price_ideal": price_ideal, "price_close": price_close})
+        else:
+            self.prices.append({"timestamp": ohlcv.timestamp, "action": a, "price_slippage": price_ideal, "price_ideal": price_ideal, "price_close": price_close})
+        
         # Update equity after the trade
         self.equity = self.balance + self.crypto_quantity * price_close
         reward = self.reward()
@@ -101,6 +122,7 @@ class Account:
             log_return_total=np.log(self.equity / self.initial_balance),
             log_return_step=np.log(self.equity / self.prev_equity)
         )
+
 
         return AccountState(
             reward=reward,
@@ -143,7 +165,7 @@ class Account:
         
         stochastic_slippage = self.np_random.uniform(0, self.noise_stddev)
 
-        slippage_coefficient = np.minimum(1.0, self.adjust_impact_coeff * (deterministic_slippage + stochastic_slippage))
+        slippage_coefficient = np.minimum(1.0, self.adjust_impact_coeff * deterministic_slippage + stochastic_slippage)
         
         return range_slippage * slippage_coefficient
     

@@ -13,8 +13,8 @@ settings:
 model_env:
   window_size: 24
   initial_balance: 100000
-  tick_per_episode: 32
-  seed: 39481
+  tick_per_episode: 46080
+  seed: 28937
 
 parameters:
   total_timesteps: 1843200 # 24 * 32 * 12 * 4 * 50 epoch

@@ -47,17 +47,19 @@ class Market(gym.Env):
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
-        self.action_space.seed(seed)
-        self.observation_space.seed(seed)
-        self.provider.reset(seed=seed)
-        self.account.reset(seed=seed)
+        if seed is not None:
+            self.action_space.seed(seed)
+            self.observation_space.seed(seed)
+        self.provider.reset(np_random=self.np_random)
+        self.account.reset(np_random=self.np_random)
         self.episode = self.provider.next_episode()
         self.current_data = self.episode.next()
         portfolio_features = PortfolioFeatures.initial_value()
         return self._obs(self.current_data, portfolio_features), self._info()
 
     def step(self, action: np.float32):
-        account_state: AccountState = self.account.step(a=action, ohlcv=self.current_data.ohlcv)
+        scalar_action = float(action[0]) if isinstance(action, np.ndarray) else float(action)
+        account_state: AccountState = self.account.step(a=scalar_action, ohlcv=self.current_data.ohlcv)
         terminated = account_state.terminated
         truncated = self.current_data.no_more_data
         reward = account_state.reward
@@ -65,6 +67,8 @@ class Market(gym.Env):
             self.current_data = self.episode.next()
         obs = self._obs(self.current_data, account_state.portfolio_features)
         info = self._info()
+        info['timestamp'] = self.current_data.ohlcv.timestamp
+        info['price'] = self.current_data.ohlcv.close
         return obs, reward, terminated, truncated, info
     
     

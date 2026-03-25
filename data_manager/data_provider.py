@@ -25,14 +25,16 @@ class DataProvider:
         if self.tick_for_episode > data_length:
             raise ValueError("tick_for_episode is greater than data length")
         self.list_indices = list(range(self.tick_for_episode - 1, data_length))
-        self.generator = np.random.default_rng()
+        self.generator = None
 
-    def reset(self, seed: Optional[int] = None):
-        if seed is not None:
-            self.generator = np.random.default_rng(seed)
+    def reset(self, np_random: np.random.Generator):
+        flag = False
+        if self.generator is None:
+            flag = True
+        self.generator = np_random
+        if flag:
             self.generator.shuffle(self.list_indices)
-            self.current_index = 0
-        
+
     def next_episode(self) -> Episode:
         if self.current_index >= len(self.list_indices):
             self.generator.shuffle(self.list_indices)

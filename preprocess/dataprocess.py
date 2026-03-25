@@ -1,0 +1,74 @@
+import pandas as pd
+import numpy as np
+import talib as ta
+
+def load_data(path):
+    return pd.read_csv(path, index_col="datetime", parse_dates=True)
+
+def pre_process(df):
+    data = df.copy()
+    
+    EPSILON = 1e-8
+    delta = data.index.to_series().diff()
+    delta_time = delta.dt.total_seconds() / (60 * 15)
+    delta_time = delta_time.fillna(1).astype(int)
+    data['log_time_gap'] = np.log(delta_time)
+
+    # 1. Temporal Features
+    hours = data.index.hour
+    day_of_week = data.index.dayofweek
+    data['hour_sin'] = np.sin(2 * np.pi * hours / 24)
+    data['hour_cos'] = np.cos(2 * np.pi * hours / 24)
+    data['dow_sin'] = np.sin(2 * np.pi * day_of_week / 7)
+    data['dow_cos'] = np.cos(2 * np.pi * day_of_week / 7)
+
+    # 2. Multi-horizon Momentum
+    horizons = [1, 3, 5, 15, 60]
+    for h in horizons:
+        data[f'log_ret_{h}'] = np.log(data['close'] / data['close'].shift(h))
+
+    # 3. Volatility & Risk Representation
+    data['volatility_4'] = data['log_ret_1'].rolling(window=4).std()
+    
+    volatility_horizons = [16, 96, 672]
+    for h in volatility_horizons:
+        data[f'volatility_{h}'] = data['log_ret_1'].rolling(window=h).std()
+        data[f'volatility_{h}_ratio'] = data['volatility_4'] / (data[f'volatility_{h}'] + EPSILON)
+
+    # Normalized Spread
+    data['spread_hl_norm'] = np.log(data['high'] / (data['low'] + EPSILON)) / (data['volatility_4'] + EPSILON)
+
+    # 4. Microstructure & Volume Dynamics
+    typical_price = ta.TYPPRICE(data['high'], data['low'], data['close'])
+    tp_vol = typical_price * data['volume']
+    
+    rolling_tp_vol = ta.SUM(tp_vol, timeperiod=20)
+    rolling_vol = ta.SUM(data['volume'], timeperiod=20)
+    
+    vwap_20 = rolling_tp_vol / (rolling_vol + EPSILON)
+    data['dist_vwap_20'] = (data['close'] - vwap_20) / (vwap_20 + EPSILON)
+
+    # 5. Signed Volume Pressure
+    direction = np.sign(data['log_ret_1'].fillna(0))
+    log_signed_volume = np.log(1 + data['volume']) * direction
+
+    window_z = 96
+    # Sử dụng biến local để tính mean và std
+    mean_vol = ta.SMA(log_signed_volume, timeperiod=window_z)
+    std_vol = ta.STDDEV(log_signed_volume, timeperiod=window_z, nbdev=1)
+
+    # 2. Chỉ đưa những kết quả quan trọng vào DataFrame
+    signed_vol_zscore = (log_signed_volume - mean_vol) / (std_vol + EPSILON)
+    data['final_feature_ma'] = ta.SMA(signed_vol_zscore, timeperiod=20)
+    data = data.dropna()
+    return data
+
+def preprocess_and_save(path_data, save_path):
+    print(f"Loading data from {path_data}")
+    data = load_data(path_data)
+    print(f"Preprocessing data from {path_data}")
+    data = pre_process(data)
+    print(f"Saving data to {save_path}")
+    data.to_csv(save_path)
+    print(f"Data saved to {save_path}")
+    return data

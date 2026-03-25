@@ -30,7 +30,8 @@ class Episode:
         if self.out_of_data:
             raise ValueError("Out of data")
             
-        current_tick_data = self.data.iloc[self.current_index]  
+        current_tick_data = self.data.iloc[self.current_index]
+        timestamp_val = current_tick_data.name
         
         ohlcv = create_ohlcv(
             open=current_tick_data['open'],
@@ -38,7 +39,7 @@ class Episode:
             low=current_tick_data['low'],
             close=current_tick_data['close'],
             volume=current_tick_data['volume'],
-            timestamp=current_tick_data['timestamp']
+            timestamp=timestamp_val
         )
         
         observation = self.data.iloc[self.current_index - self.window_size : self.current_index][self._feature_cols].values

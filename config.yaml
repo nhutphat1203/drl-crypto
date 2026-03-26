@@ -8,7 +8,7 @@ settings:
   best_model_save_path: "best_model"
   eval_freq: 456774
   tensorboard_log: "tensorboard/"
-  device: "cpu"
+  device: "cuda"
   train_verbose: 1
   eval_verbose: 1
 

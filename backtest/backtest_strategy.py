@@ -1,10 +1,9 @@
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import quantstats as qs
 import pandas as pd
 import numpy as np
-import os
-import sys
-
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from environment.market import Market
 from preprocess.dataprocess import load_data
@@ -60,7 +59,7 @@ def create_env_for_model(
 
     return test_venv
 
-def strategy_buy_and_hold(data: pd.DataFrame, initial_balance: float, window_size: int, episode_length: int):
+def strategy_buy_and_hold(name: str, data: pd.DataFrame, initial_balance: float, window_size: int, episode_length: int):
     env = create_env_normal(data, initial_balance, window_size, episode_length)
     obs = env.reset()
     done = False
@@ -83,7 +82,7 @@ def strategy_buy_and_hold(data: pd.DataFrame, initial_balance: float, window_siz
     df.index = pd.to_datetime(df["timestamp"])
     df = df[~df.index.duplicated(keep='last')]
     df = df.resample('15min').ffill()
-    df.to_csv("buy_and_hold.csv")
+    df.to_csv(f"{name}_buy_and_hold.csv")
     return df
 
 def backtest(df_strategy, name_strategy, file_name):
@@ -118,6 +117,7 @@ if __name__ == "__main__":
         train_data, eval_data, test_data = train_eval_test_split(data, train_ratio=0.8, eval_ratio=0.1)
         
         b_h_df = strategy_buy_and_hold(
+            name=f"{key}",
             data=test_data, 
             initial_balance=config.model_env.initial_balance, 
             window_size=config.model_env.window_size, 

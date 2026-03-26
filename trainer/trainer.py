@@ -7,10 +7,12 @@ from stable_baselines3.common.callbacks import (
     CallbackList, 
     StopTrainingOnNoModelImprovement 
 )
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from typing import Callable
 from config import Config
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from trainer.custom_extractor import BasicGRUExtractor
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
@@ -31,8 +33,8 @@ class Trainer:
         train_env = self.train_env
         val_env = self.val_env
         early_stopping_callback = StopTrainingOnNoModelImprovement(
-            max_no_improvement_evals=30,
-            min_evals=15,              
+            max_no_improvement_evals=15,
+            min_evals=5,              
             verbose=1
         )
         eval_callback = EvalCallback(
@@ -55,16 +57,16 @@ class Trainer:
         callback = CallbackList([checkpoint_callback, eval_callback])
 
         policy_kwargs = dict(
-            net_arch=dict(pi=[128, 64], vf=[128, 64]),
-            activation_fn=th.nn.GELU,
+            net_arch=dict(pi=[256], vf=[256]),
+            activation_fn=th.nn.SiLU,
             optimizer_class=th.optim.AdamW,
             optimizer_kwargs=dict(
                 eps=1e-5,
                 weight_decay=1e-4
             ),
+            features_extractor_class=BasicGRUExtractor,
+            features_extractor_kwargs=dict(features_dim=256),
         )
-
-
         model = PPO(
             "MultiInputPolicy", 
             train_env,

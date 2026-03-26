@@ -13,6 +13,8 @@ class SettingsConfig:
     eval_freq: int
     tensorboard_log: str
     device: str
+    train_verbose: int
+    eval_verbose: int
 
 @dataclass
 class ModelEnvConfig:

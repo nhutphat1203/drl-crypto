@@ -22,6 +22,14 @@ def pre_process(df):
     data['dow_sin'] = np.sin(2 * np.pi * day_of_week / 7)
     data['dow_cos'] = np.cos(2 * np.pi * day_of_week / 7)
 
+    # 1. Price structure
+    high_low_range = data['high'] - data['low'] + EPSILON
+    data['body_ratio'] = (data['close'] - data['open']) / high_low_range
+    max_open_close = data[['open', 'close']].max(axis=1)
+    min_open_close = data[['open', 'close']].min(axis=1)
+    data['upper_shadow_ratio'] = (data['high'] - max_open_close) / high_low_range
+    data['lower_shadow_ratio'] = (min_open_close - data['low']) / high_low_range
+
     # 2. Multi-horizon Momentum
     horizons = [1, 3, 5, 15, 60]
     for h in horizons:
@@ -53,13 +61,12 @@ def pre_process(df):
     log_signed_volume = np.log(1 + data['volume']) * direction
 
     window_z = 96
-    # Sử dụng biến local để tính mean và std
     mean_vol = ta.SMA(log_signed_volume, timeperiod=window_z)
     std_vol = ta.STDDEV(log_signed_volume, timeperiod=window_z, nbdev=1)
 
-    # 2. Chỉ đưa những kết quả quan trọng vào DataFrame
     signed_vol_zscore = (log_signed_volume - mean_vol) / (std_vol + EPSILON)
     data['final_feature_ma'] = ta.SMA(signed_vol_zscore, timeperiod=20)
+
     data = data.dropna()
     return data
 

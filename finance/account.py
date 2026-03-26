@@ -29,8 +29,8 @@ class Account:
     initial_balance: float
     fee_open_percent: float = 0.001
     fee_close_percent: float = 0.001
-    adjust_impact_coeff: float = 0.05  # Coefficient to adjust market impact cost
-    noise_stddev: float = 0.05  # Standard deviation for stochastic slippage
+    adjust_impact_coeff: float = 0.3  # Coefficient to adjust market impact cost
+    noise_stddev: float = 0.01  # Standard deviation for stochastic slippage
     balance: float = field(init=False, default=0.0)
     crypto_quantity: float = field(init=False, default=0.0)
     equity: float = field(init=False, default=0.0)
@@ -39,8 +39,7 @@ class Account:
     total_trades: int = field(init=False, default=0)
     np_random: np.random.Generator = field(init=False)
     prev_equity: float = field(init=False)
-    prices: list[dict[str, float]] = field(init=False, default_factory=list)
-    counter: int = field(init=False, default=0)
+    total_slippage: float = field(init=False, default=0.0)
     
     def __post_init__(self):
         self.balance = self.initial_balance
@@ -54,20 +53,11 @@ class Account:
         self.balance = self.initial_balance
         self.crypto_quantity = 0.0
         self.equity = self.initial_balance
+        self.prev_equity = self.initial_balance
         self.fee_open_total = 0.0
         self.fee_close_total = 0.0
         self.total_trades = 0
-        if self.counter > 0:
-            self.write_prices_to_csv()
-        self.prices = []
-        self.counter += 1
-
-    def write_prices_to_csv(self):
-        """Write the account data to a CSV file.
-        """
-        filename = f"prices_{self.counter}.csv"
-        df = pd.DataFrame(self.prices)
-        df.to_csv(filename, index=False)
+        self.total_slippage = 0.0
 
     def step(self, a: float, ohlcv: OHLCV):
         """interface for agent to perform an order
@@ -80,27 +70,26 @@ class Account:
         price_ideal = ohlcv.open  # Using open price as the ideal price for the trade
         price_close = ohlcv.close  # Using close price as the closing price for the trade
         self.prev_equity = self.equity
-
-        price_entry = price_ideal
+        price_execute = price_ideal
 
         if a > 0:  # Buy
             amount_to_spend = self.balance * a
-            slippage_cost = self._slippage_and_market_impact_cost(price_ideal, amount_to_spend, ohlcv)
-            price_entry = price_ideal + slippage_cost
+            estimate_crypto_vol = amount_to_spend / price_ideal
+            slippage_cost = self._slippage_distance(price_ideal, estimate_crypto_vol, ohlcv)
+            price_execute = price_ideal + slippage_cost
             fee_open = amount_to_spend * self.fee_open_percent
             self.fee_open_total += fee_open
-            quantity_received = (amount_to_spend - fee_open) / price_entry
+            quantity_received = (amount_to_spend - fee_open) / price_execute
             self.balance -= amount_to_spend
             self.crypto_quantity += quantity_received
             if quantity_received > 0:
                 self.total_trades += 1
-            self.prices.append({"timestamp": ohlcv.timestamp, "action": a, "price_slippage": price_entry, "price_ideal": price_ideal, "price_close": price_close})
+            self.total_slippage += slippage_cost
         elif a < 0:  # Sell
             crypto_sell = self.crypto_quantity * a * -1
-            balance_ideal = crypto_sell * price_ideal
-            slippage_cost = self._slippage_and_market_impact_cost(price_ideal, -balance_ideal, ohlcv)
-            price_exit = price_ideal - slippage_cost
-            balance_received = crypto_sell * price_exit
+            slippage_cost = self._slippage_distance(price_ideal, -crypto_sell, ohlcv)
+            price_execute = price_ideal - slippage_cost
+            balance_received = crypto_sell * price_execute
             fee_close = balance_received * self.fee_close_percent
             balance_received -= fee_close
             self.fee_close_total += fee_close
@@ -108,21 +97,18 @@ class Account:
             self.crypto_quantity -= crypto_sell
             if balance_received > 0:
                 self.total_trades += 1
-            self.prices.append({"timestamp": ohlcv.timestamp, "action": a, "price_slippage": price_exit, "price_ideal": price_ideal, "price_close": price_close})
-        else:
-            self.prices.append({"timestamp": ohlcv.timestamp, "action": a, "price_slippage": price_ideal, "price_ideal": price_ideal, "price_close": price_close})
+            self.total_slippage += slippage_cost
         
         # Update equity after the trade
         self.equity = self.balance + self.crypto_quantity * price_close
         reward = self.reward()
         terminated = self.equity <= self.initial_balance * 0.1
         portfolio_features = PortfolioFeatures(
-            fiat_ratio=self.balance / self.initial_balance,
-            crypto_ratio=self.crypto_quantity * price_close / self.initial_balance,
+            fiat_ratio=self.balance / self.equity,
+            crypto_ratio=self.crypto_quantity * price_close / self.equity,
             log_return_total=np.log(self.equity / self.initial_balance),
-            log_return_step=np.log(self.equity / self.prev_equity)
+            log_return_step=np.log(self.equity / self.prev_equity),
         )
-
 
         return AccountState(
             reward=reward,
@@ -131,7 +117,7 @@ class Account:
         )
 
     def reward(self) -> float:
-        r = (self.equity - self.prev_equity) / self.prev_equity
+        r = np.log(self.equity / self.prev_equity)
         return r
         
     def get_equity(self) -> float:
@@ -144,10 +130,46 @@ class Account:
             'equity': self.equity,
             'fee_open_total': self.fee_open_total,
             'fee_close_total': self.fee_close_total,
-            'total_trades': self.total_trades
+            'total_trades': self.total_trades,
+            'total_slippage': self.total_slippage
         }
 
-    def _slippage_and_market_impact_cost(self, price_ideal: float, estimate_volume: float, ohlcv: OHLCV) -> float:
+    def get_final_stats(self) -> str:
+        total_return = self.equity / self.initial_balance - 1
+        total_fee = self.fee_open_total + self.fee_close_total
+        total_trades = self.total_trades
+        profit = self.equity - self.initial_balance
+        if total_trades > 0:
+            profit_per_trade = profit / total_trades
+            fee_per_trade = total_fee / total_trades
+            slippage_per_trade = self.total_slippage / total_trades
+        else:
+            profit_per_trade = 0
+            fee_per_trade = 0
+            slippage_per_trade = 0
+
+        lines = [
+            "----------------------------------------------------------",
+            "                  Final Trading Stats",
+            "----------------------------------------------------------",
+            f"portfolio/initial_balance   | {self.initial_balance:.6f}",
+            f"portfolio/final_equity      | {self.equity:.6f}",
+            f"portfolio/profit            | {profit:.6f}",
+            f"portfolio/total_return      | {total_return:.6f}",
+            f"trade/total_trades          | {total_trades}",
+            f"trade/profit_per_trade      | {profit_per_trade:.6f}" if total_trades > 0 else
+            f"trade/profit_per_trade      | nan",
+            f"cost/total_fee              | {total_fee:.6f}",
+            f"cost/fee_per_trade          | {fee_per_trade:.6f}" if total_trades > 0 else
+            f"cost/fee_per_trade          | nan",
+            f"cost/total_slippage         | {self.total_slippage:.6f}",
+            f"cost/slippage_per_trade     | {slippage_per_trade:.6f}" if total_trades > 0 else
+            f"cost/slippage_per_trade     | nan",
+            "----------------------------------------------------------",
+        ]
+        return "\n".join(lines)
+
+    def _slippage_distance(self, price_ideal: float, estimate_volume: float, ohlcv: OHLCV) -> float:
         """Calculate the slippage and market impact cost based on the trade size.
 
         Args:
@@ -158,8 +180,10 @@ class Account:
         if estimate_volume > 0:
             # Calculate the slippage cost based on the trade size
             range_slippage = ohlcv.high - price_ideal
-        else:
+        elif estimate_volume < 0:
             range_slippage = price_ideal - ohlcv.low
+        else:
+            return 0.0
         
         deterministic_slippage = np.sqrt(abs(estimate_volume) / (ohlcv.volume + 1e-6)) 
         

@@ -9,20 +9,24 @@ from finance.account import Account, AccountState, PortfolioFeatures
 
 class Market(gym.Env):
     def __init__(self, df: pd.DataFrame,
+                name: str,
                 initial_balance: float,
                 window_size: int, 
                 episode_length: int, 
                 fee_rate_open: float = 0.01,
                 fee_rate_close: float = 0.01,
-                test_mode: bool = False):
+                test_mode: bool = False,
+                verbose: int = 0):
         super().__init__()
+        self.name = name
         self.df = df
         self.initial_balance = initial_balance
         self.window_size = window_size
         self.episode_length = episode_length
         self.test_mode = test_mode
-        self.fee_rate_open = fee_rate_open
+        self.fee_rate_open = fee_rate_open  
         self.fee_rate_close = fee_rate_close
+        self.verbose = verbose
         self.action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32)
         self.provider = DataProvider(data=self.df, window_size=self.window_size, tick_for_episode=self.episode_length, use_full_for_one_episode=self.test_mode)
         cols_to_exclude = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
@@ -69,6 +73,11 @@ class Market(gym.Env):
         info = self._info()
         info['timestamp'] = self.current_data.ohlcv.timestamp
         info['price'] = self.current_data.ohlcv.close
+
+        if (terminated or truncated) and self.verbose > 0:
+            print(f"Name: {self.name}")
+            print(self.account.get_final_stats())
+
         return obs, reward, terminated, truncated, info
     
     

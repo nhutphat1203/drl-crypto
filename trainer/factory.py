@@ -22,14 +22,17 @@ def get_trainer(data_metadata: List[DataMetadata],
     seed = config.model_env.seed
     set_random_seed(seed)
 
-    def make_env(data_df: pd.DataFrame, rank: int, test_mode: bool = False):
+    def make_env(data_df: pd.DataFrame, rank: int, test_mode: bool = False, verbose: int = 0):
         def _init():
+            prefix = "Test" if test_mode else "Train"
             env = Market(
                 df=data_df,
+                name=f"{prefix}_env_{rank}",
                 initial_balance=config.model_env.initial_balance,
                 window_size=config.model_env.window_size,
                 episode_length=config.model_env.tick_per_episode,
-                test_mode=test_mode
+                test_mode=test_mode,
+                verbose=verbose
             )
             
             env.reset(seed=seed + rank)
@@ -42,7 +45,7 @@ def get_trainer(data_metadata: List[DataMetadata],
             return env
         return _init
 
-    train_env_fns = [make_env(meta.data_train, i) for i, meta in enumerate(data_metadata)]
+    train_env_fns = [make_env(meta.data_train, i, verbose=config.settings.train_verbose) for i, meta in enumerate(data_metadata)]
     train_venv = DummyVecEnv(train_env_fns)
     train_venv.seed(seed)
 
@@ -54,7 +57,7 @@ def get_trainer(data_metadata: List[DataMetadata],
         gamma=config.parameters.gamma
     )
 
-    val_env_fns = [make_env(meta.data_val, i, test_mode=True) for i, meta in enumerate(data_metadata)]
+    val_env_fns = [make_env(meta.data_val, i, test_mode=True, verbose=config.settings.eval_verbose) for i, meta in enumerate(data_metadata)]
     val_venv = DummyVecEnv(val_env_fns)
     val_venv.seed(seed)
     val_venv = VecNormalize(

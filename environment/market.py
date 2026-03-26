@@ -73,6 +73,8 @@ class Market(gym.Env):
         info = self._info()
         info['timestamp'] = self.current_data.ohlcv.timestamp
         info['price'] = self.current_data.ohlcv.close
+        info['action'] = scalar_action
+        info['reward'] = reward
 
         if (terminated or truncated) and self.verbose > 0:
             print(f"Name: {self.name}")

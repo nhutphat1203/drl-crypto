@@ -12,7 +12,7 @@ from typing import Callable
 from config import Config
 import os
 from dataclasses import dataclass, field
-from trainer.custom_extractor import BasicGRUExtractor
+from trainer.custom_extractor import BasicGRUExtractor, BasicConv1DExtractor
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
@@ -64,7 +64,7 @@ class Trainer:
                 eps=1e-5,
                 weight_decay=1e-4
             ),
-            features_extractor_class=BasicGRUExtractor,
+            features_extractor_class=BasicConv1DExtractor,
             features_extractor_kwargs=dict(features_dim=256),
         )
         model = PPO(

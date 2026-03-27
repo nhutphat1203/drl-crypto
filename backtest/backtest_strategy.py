@@ -9,13 +9,19 @@ from environment.market import Market
 from preprocess.dataprocess import load_data
 from preprocess.split_data import train_test_split, train_eval_test_split
 from config import load_config
+from dataclasses import dataclass
 
-def create_env_normal(data: pd.DataFrame, initial_balance: float, window_size: int, episode_length: int):
+@dataclass
+class Benchmark:
+    name: str
+    returns: pd.DataFrame
+
+def create_env_normal(data: pd.DataFrame, initial_balance: float, window_size: int):
     market = Market(df=data, 
     name="test",
     initial_balance=initial_balance,
     window_size=window_size,
-    episode_length=episode_length,
+    episode_length=1,
     test_mode=True,
     verbose=1
     )
@@ -25,7 +31,6 @@ def create_env_for_model(
     data: pd.DataFrame, 
     initial_balance: float, 
     window_size: int, 
-    episode_length: int,
     vec_normalize_path: str  # Yêu cầu đường dẫn đến file thống kê đã lưu lúc train
 ):
     # 1. Hàm khởi tạo môi trường gốc
@@ -35,7 +40,7 @@ def create_env_for_model(
             name="test",
             initial_balance=initial_balance,
             window_size=window_size,
-            episode_length=episode_length,
+            episode_length=1,
             test_mode=True,
             verbose=1
         )
@@ -59,8 +64,8 @@ def create_env_for_model(
 
     return test_venv
 
-def strategy_buy_and_hold(name: str, data: pd.DataFrame, initial_balance: float, window_size: int, episode_length: int):
-    env = create_env_normal(data, initial_balance, window_size, episode_length)
+def strategy_buy_and_hold(data: pd.DataFrame, initial_balance: float, window_size: int):
+    env = create_env_normal(data, initial_balance, window_size)
     obs = env.reset()
     done = False
     history = []
@@ -73,35 +78,61 @@ def strategy_buy_and_hold(name: str, data: pd.DataFrame, initial_balance: float,
             {
                 "timestamp": info["timestamp"],
                 "equity": info["equity"],
-                "price": info["price"],
-                "action": info["action"],
-                "reward": info["reward"],
             }
         )
     df = pd.DataFrame(history)
     df.index = pd.to_datetime(df["timestamp"])
     df = df[~df.index.duplicated(keep='last')]
     df = df.resample('15min').ffill()
-    df.to_csv(f"{name}_buy_and_hold.csv")
-    return df
+    returns = df["equity"].pct_change().dropna()
+    return returns
 
-def backtest(df_strategy, name_strategy, file_name):
+def backtest(df_strategy, name_strategy, file_name, backtest_folder, benchmark: Benchmark=None):
     returns = df_strategy["equity"].pct_change().dropna()
-    trading_periods_per_year = 365 * 24 * 15 * 4
+    trading_periods_per_year = 365 * 24 * 4
     returns.name = name_strategy
     rf = 0.052
-    folder_path = 'reports'
+    folder_path = backtest_folder
     os.makedirs(folder_path, exist_ok=True)
-
     name_file = f'{file_name}_back_test_report.html'
-    qs.reports.html(
-        returns, 
-        output=f'{folder_path}/{name_file}', 
-        title='Backtest', 
-        periods_per_year=trading_periods_per_year,
-        rf=rf     
-    )
+    if benchmark is not None:
+        qs.reports.html(
+            returns, 
+            output=f'{folder_path}/{name_file}', 
+            title='Backtest', 
+            periods_per_year=trading_periods_per_year,
+            rf=rf,
+            benchmark=benchmark.returns,
+            benchmark_title=benchmark.name,
+        )
+    else:
+        qs.reports.html(
+            returns, 
+            output=f'{folder_path}/{name_file}', 
+            title='Backtest', 
+            periods_per_year=trading_periods_per_year,
+            rf=rf,
+        )
 
+def backtest_model(model, env, name_strategy, file_name, backtest_folder, benchmark: Benchmark=None):
+    obs = env.reset()
+    done = [False]
+    history = []
+    while not done[0]:
+        action, _states = model.predict(obs, deterministic=True)
+        obs, reward, done, info = env.step(action)
+        current_info = info[0]
+        history.append(
+            {
+                "timestamp": current_info["timestamp"],
+                "equity": current_info["equity"],
+            }
+        )
+    df = pd.DataFrame(history)
+    df.index = pd.to_datetime(df["timestamp"])
+    df = df[~df.index.duplicated(keep='last')]
+    df = df.resample('15min').ffill()
+    backtest(df, name_strategy, file_name, backtest_folder, benchmark)
 
 if __name__ == "__main__":
     config = load_config('config.yaml')
@@ -117,7 +148,6 @@ if __name__ == "__main__":
         train_data, eval_data, test_data = train_eval_test_split(data, train_ratio=0.8, eval_ratio=0.1)
         
         b_h_df = strategy_buy_and_hold(
-            name=f"{key}",
             data=test_data, 
             initial_balance=config.model_env.initial_balance, 
             window_size=config.model_env.window_size, 

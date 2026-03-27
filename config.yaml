@@ -1,9 +1,9 @@
 settings:
-  folder_path: "te1"
+  folder_path: "models/gru_advanced"
   log_path: "logs/"
   model_save_path: "models/ppo_finance_model"
   checkpoint_path: "checkpoints/"
-  checkpoint_freq: 380645
+  checkpoint_freq: 152258
   checkpoint_name_pfx: "model_checkpoint"
   best_model_save_path: "best_model"
   eval_freq: 456774
@@ -13,9 +13,9 @@ settings:
   eval_verbose: 1
 
 model_env:
-  window_size: 96
+  window_size: 48
   initial_balance: 100000
-  tick_per_episode: 43200 # 15 * 4 * 24 * 30
+  tick_per_episode: 8640
   seed: 28937
 
 parameters:
@@ -23,11 +23,11 @@ parameters:
   # train x% - 0.7 = 152258
   # test y% - 0.15 = 32627
   # val z% - 0.15 = 32627
-  total_timesteps: 4567740 # 152258 * 30 epoch
+  total_timesteps: 4567740 # 152258 * 30
   learning_rate: 1e-4
   gamma: 0.99
-  n_steps: 5120
-  ent_coef: 0.007
+  n_steps: 2048
+  ent_coef: 0.006
   clip_range: 0.2
   n_epochs: 7
   batch_size: 512

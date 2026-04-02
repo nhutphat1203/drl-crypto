@@ -1,16 +1,16 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import pandas as pd
 import numpy as np
 from config import load_config
 from environment.market import Market
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
 
 def main():
     print("=== TẢI CẤU HÌNH VÀ DỮ LIỆU ===")
     config = load_config("config.yaml")
     
-    data_path = "dataprocessed/binance_BTC_USDT_2020_2026_15m_processed.csv"
+    data_path = "dataprocessed/binance_BTC_USDT_processed.csv"
     try:
         df = pd.read_csv(data_path, index_col="datetime", parse_dates=True)
         # Giới hạn data lại còn 1500 dòng để test nhanh chạy xuyên nhiều episodes 
@@ -27,7 +27,8 @@ def main():
         initial_balance=config.model_env.initial_balance,
         window_size=config.model_env.window_size,
         episode_length=config.model_env.tick_per_episode, # Sẽ bị override bởi DataProvider.use_full_for_one_episode = True
-        test_mode=True  # BẬT TEST MODE
+        test_mode=True,  # BẬT TEST MODE
+        name="BTC_USDT"
     )
     
     seed = config.model_env.seed

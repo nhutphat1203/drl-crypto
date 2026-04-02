@@ -17,7 +17,7 @@ class DataMetadata:
     data_val: pd.DataFrame
 
 def get_trainer(data_metadata: List[DataMetadata],
-                config: Config) -> Trainer:
+                config: Config, folder_path: str, extractor_type: str) -> Trainer:
     
     seed = config.model_env.seed
     set_random_seed(seed)
@@ -39,7 +39,7 @@ def get_trainer(data_metadata: List[DataMetadata],
             env.action_space.seed(seed + rank)
             
             if not test_mode:
-                log_sub_path = os.path.join(config.settings.folder_path, config.settings.log_path, f"env_{rank}")
+                log_sub_path = os.path.join(folder_path, config.settings.log_path, f"env_{rank}")
                 os.makedirs(log_sub_path, exist_ok=True)
                 env = Monitor(env, log_sub_path)
             return env
@@ -74,6 +74,8 @@ def get_trainer(data_metadata: List[DataMetadata],
         train_env=train_venv,
         val_env=val_venv,
         config=config,
+        folder_path=folder_path,
+        extractor_type=extractor_type
     )
 
     return trainer

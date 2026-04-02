@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import pandas as pd
 import numpy as np
 from config import load_config
@@ -8,7 +11,7 @@ def main():
     config = load_config("config.yaml")
     
     # Sử dụng file data đã được preprocess
-    data_path = "dataprocessed/binance_BTC_USDT_2020_2026_15m_processed.csv"
+    data_path = "dataprocessed/binance_BTC_USDT_processed.csv"
     try:
         df = pd.read_csv(data_path, index_col="datetime", parse_dates=True)
         print(f"Đã tải {len(df)} dòng dữ liệu từ {data_path}.")
@@ -17,7 +20,7 @@ def main():
         return
 
     # Tùy chỉnh thông số để dễ quan sát việc chuyển episode
-    test_episode_length = 8 # Mỗi episode dài 150 timestep
+    test_episode_length = 28 # Mỗi episode dài 150 timestep
     total_timesteps_to_test = 8*3 # Chạy tổng cộng 500 timestep
     
     print("\n=== KHỞI TẠO MÔI TRƯỜNG ===")
@@ -26,7 +29,8 @@ def main():
         initial_balance=config.model_env.initial_balance,
         window_size=config.model_env.window_size,
         episode_length=test_episode_length,
-        test_mode=False
+        test_mode=False,
+        name="BTC_USDT"
     )
     
     seed = config.model_env.seed

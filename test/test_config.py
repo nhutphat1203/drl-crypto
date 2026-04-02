@@ -48,7 +48,6 @@ def test_config_from_dict(valid_yaml_dict):
     config = Config.from_dict(valid_yaml_dict)
     
     assert isinstance(config.settings, SettingsConfig)
-    assert config.settings.folder_path == "te1"
     
     assert isinstance(config.model_env, ModelEnvConfig)
     assert config.model_env.seed == 42

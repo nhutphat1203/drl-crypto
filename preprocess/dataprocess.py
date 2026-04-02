@@ -7,10 +7,10 @@ def load_data(path):
 
 def pre_process(df):
     data = df.copy()
-    
     EPSILON = 1e-8
+    
     delta = data.index.to_series().diff()
-    delta_time = delta.dt.total_seconds() / (60 * 15)
+    delta_time = delta.dt.total_seconds() / 3600
     delta_time = delta_time.fillna(1).astype(int)
     data['log_time_gap'] = np.log(delta_time)
 
@@ -26,22 +26,20 @@ def pre_process(df):
     high_low_range = data['high'] - data['low'] + EPSILON
     data['body_ratio'] = (data['close'] - data['open']) / high_low_range
     max_open_close = data[['open', 'close']].max(axis=1)
-    min_open_close = data[['open', 'close']].min(axis=1)
     data['upper_shadow_ratio'] = (data['high'] - max_open_close) / high_low_range
-    data['lower_shadow_ratio'] = (min_open_close - data['low']) / high_low_range
 
     # 2. Multi-horizon Momentum
-    horizons = [1, 3, 5, 15, 60]
+    horizons = [1, 4, 12, 24, 168]
     for h in horizons:
         data[f'log_ret_{h}'] = np.log(data['close'] / data['close'].shift(h))
 
     # 3. Volatility & Risk Representation
     data['volatility_4'] = data['log_ret_1'].rolling(window=4).std()
     
-    volatility_horizons = [16, 96, 672]
+    volatility_horizons = [24, 168, 720]
     for h in volatility_horizons:
-        data[f'volatility_{h}'] = data['log_ret_1'].rolling(window=h).std()
-        data[f'volatility_{h}_ratio'] = data['volatility_4'] / (data[f'volatility_{h}'] + EPSILON)
+        volatility_h = data['log_ret_1'].rolling(window=h).std()
+        data[f'volatility_{h}_ratio'] = data['volatility_4'] / (volatility_h + EPSILON)
 
     # Normalized Spread
     data['spread_hl_norm'] = np.log(data['high'] / (data['low'] + EPSILON)) / (data['volatility_4'] + EPSILON)
@@ -50,23 +48,23 @@ def pre_process(df):
     typical_price = ta.TYPPRICE(data['high'], data['low'], data['close'])
     tp_vol = typical_price * data['volume']
     
-    rolling_tp_vol = ta.SUM(tp_vol, timeperiod=20)
-    rolling_vol = ta.SUM(data['volume'], timeperiod=20)
+    rolling_tp_vol = ta.SUM(tp_vol, timeperiod=24)
+    rolling_vol = ta.SUM(data['volume'], timeperiod=24)
     
-    vwap_20 = rolling_tp_vol / (rolling_vol + EPSILON)
-    data['dist_vwap_20'] = (data['close'] - vwap_20) / (vwap_20 + EPSILON)
+    vwap_24 = rolling_tp_vol / (rolling_vol + EPSILON)
+    data['dist_vwap_24'] = (data['close'] - vwap_24) / (vwap_24 + EPSILON)
 
     # 5. Signed Volume Pressure
     direction = np.sign(data['log_ret_1'].fillna(0))
     log_signed_volume = np.log(1 + data['volume']) * direction
 
-    window_z = 96
+    window_z = 24
     mean_vol = ta.SMA(log_signed_volume, timeperiod=window_z)
     std_vol = ta.STDDEV(log_signed_volume, timeperiod=window_z, nbdev=1)
 
-    signed_vol_zscore = (log_signed_volume - mean_vol) / (std_vol + EPSILON)
-    data['final_feature_ma'] = ta.SMA(signed_vol_zscore, timeperiod=20)
+    data['signed_vol_pressure'] = (log_signed_volume - mean_vol) / (std_vol + EPSILON)
 
+    data = data.loc[(data.index >= '2020-01-01') & (data.index <= '2026-03-31')]
     data = data.dropna()
     return data
 

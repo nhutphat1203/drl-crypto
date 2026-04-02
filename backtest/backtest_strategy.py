@@ -102,7 +102,7 @@ def backtest(df_strategy, name_strategy, file_name, backtest_folder, benchmark: 
             title='Backtest', 
             periods_per_year=trading_periods_per_year,
             rf=rf,
-            benchmark=benchmark.returns,
+            benchmark=benchmark,
             benchmark_title=benchmark.name,
         )
     else:

@@ -3,7 +3,6 @@ import yaml
 
 @dataclass
 class SettingsConfig:
-    folder_path: str
     log_path: str
     model_save_path: str
     checkpoint_path: str

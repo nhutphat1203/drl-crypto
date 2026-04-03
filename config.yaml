@@ -2,10 +2,10 @@ settings:
   log_path: "logs/"
   model_save_path: "models/ppo_finance_model"
   checkpoint_path: "checkpoints/"
-  checkpoint_freq: 100000
+  checkpoint_freq: 200000
   checkpoint_name_pfx: "model_checkpoint"
   best_model_save_path: "best_model"
-  eval_freq: 2000
+  eval_freq: 300000
   tensorboard_log: "tensorboard/"
   device: "cpu"
   train_verbose: 1
@@ -18,7 +18,7 @@ model_env:
   seed: 475
 
 parameters:
-  total_timesteps: 3000
+  total_timesteps: 3000000
   learning_rate: 1e-4
   gamma: 0.99
   n_steps: 1024

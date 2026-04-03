@@ -40,19 +40,19 @@ def main():
     print(f"Initial Balance: ${env.initial_balance:,.2f}")
     
     print(f"\n=== BẮT ĐẦU CHẠY THỬ NGHIỆM ({total_timesteps_to_test} STEPS) ===")
-    print(f"Equity: ${info['equity']:,.2f}|Balance: ${info['balance']:,.2f}|Coin: {info['crypto_quantity']:.6f}|Total trade: {info['total_trades']}")
+    print(f"Equity: ${info['equity']:,.2f}|Balance: ${info['balance']:,.2f}|Coin: {info['crypto_quantity']:.6f}|Total buy: {info['total_buy']}|Total sell: {info['total_sell']}")
     episode_count = 3
     while True:
         action = float(input("Action: "))
         next_obs, reward, terminated, truncated, step_info = env.step(action)
-        print(f"Price: {step_info['price']:.2f}|Equity: ${step_info['equity']:,.2f}|Balance: ${step_info['balance']:,.2f}|Coin: {step_info['crypto_quantity']:.6f}|Total trade: {step_info['total_trades']}")
+        print(f"Price: {step_info['price']:.2f}|Equity: ${step_info['equity']:,.2f}|Balance: ${step_info['balance']:,.2f}|Coin: {step_info['crypto_quantity']:.6f}|Total buy: {step_info['total_buy']}|Total sell: {step_info['total_sell']}")
         if terminated or truncated:
             obs, info = env.reset()
             episode_count -= 1
             if episode_count == 0:
                 break
             print(f"Episode {3 - episode_count} started")
-            print(f"Equity: ${info['equity']:,.2f}|Balance: ${info['balance']:,.2f}|Coin: {info['crypto_quantity']:.6f}|Total trade: {info['total_trades']}")
+            print(f"Equity: ${info['equity']:,.2f}|Balance: ${info['balance']:,.2f}|Coin: {info['crypto_quantity']:.6f}|Total buy: {info['total_buy']}|Total sell: {info['total_sell']}")
             
     print("\n=== HOÀN TẤT QUA TỚI TEST ===")
     print("Cấu trúc Observation (State) trả về từ Reset/Step:")

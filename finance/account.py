@@ -41,7 +41,7 @@ class Account:
     np_random: np.random.Generator = field(init=False)
     prev_equity: float = field(init=False)
     total_slippage: float = field(init=False, default=0.0)
-    N: int = field(init=False, default=0)
+    debugs: list = field(init=False, default_factory=list)
     
     def __post_init__(self):
         self.balance = self.initial_balance
@@ -61,6 +61,7 @@ class Account:
         self.total_buy = 0
         self.total_sell = 0
         self.total_slippage = 0.0
+        self.debugs = []
 
     def step(self, a: float, ohlcv: OHLCV):
         """interface for agent to perform an order
@@ -74,34 +75,37 @@ class Account:
         price_close = ohlcv.close  # Using close price as the closing price for the trade
         self.prev_equity = self.equity
         price_execute = price_ideal
+        threshold_usd = 5
 
         if a > 0:  # Buy
             amount_to_spend = self.balance * a
-            estimate_crypto_vol = amount_to_spend / price_ideal
-            slippage_cost = self._slippage_distance(price_ideal, estimate_crypto_vol, ohlcv)
-            price_execute = price_ideal + slippage_cost
-            quantity = amount_to_spend / price_execute
-            fee_open = quantity * self.fee_open_percent
-            quantity_received = quantity - fee_open
-            self.fee_open_total += fee_open * price_execute
-            self.balance -= amount_to_spend
-            self.crypto_quantity += quantity_received
-            if quantity_received > 0:
-                self.total_buy += 1
-            self.total_slippage += slippage_cost
+            if amount_to_spend >= threshold_usd:
+                estimate_crypto_vol = amount_to_spend / price_ideal
+                slippage_cost = self._slippage_distance(price_ideal, estimate_crypto_vol, ohlcv)
+                price_execute = price_ideal + slippage_cost
+                quantity = amount_to_spend / price_execute
+                fee_open = quantity * self.fee_open_percent
+                quantity_received = quantity - fee_open
+                self.fee_open_total += fee_open * price_execute
+                self.balance -= amount_to_spend
+                self.crypto_quantity += quantity_received
+                if quantity_received > 0:
+                    self.total_buy += 1
+                self.total_slippage += slippage_cost * quantity
         elif a < 0:  # Sell
             crypto_sell = self.crypto_quantity * np.abs(a)
-            slippage_cost = self._slippage_distance(price_ideal, -crypto_sell, ohlcv)
-            price_execute = price_ideal - slippage_cost
-            balance_received = crypto_sell * price_execute
-            fee_close = balance_received * self.fee_close_percent
-            balance_received -= fee_close
-            self.fee_close_total += fee_close
-            self.balance += balance_received
-            self.crypto_quantity -= crypto_sell
-            if balance_received > 0:
-                self.total_sell += 1
-            self.total_slippage += slippage_cost
+            if crypto_sell * price_ideal >= threshold_usd:
+                slippage_cost = self._slippage_distance(price_ideal, -crypto_sell, ohlcv)
+                price_execute = price_ideal - slippage_cost
+                balance_received = crypto_sell * price_execute
+                fee_close = balance_received * self.fee_close_percent
+                balance_received -= fee_close
+                self.fee_close_total += fee_close
+                self.balance += balance_received
+                self.crypto_quantity -= crypto_sell
+                if balance_received > 0:
+                    self.total_sell += 1
+                self.total_slippage += slippage_cost * crypto_sell
         
         # Update equity after the trade
         self.equity = self.balance + self.crypto_quantity * price_close
@@ -181,7 +185,7 @@ class Account:
         
         deterministic_slippage = np.sqrt(abs(estimate_volume) / (ohlcv.volume + 1e-8)) 
         
-        stochastic_slippage = self.np_random.uniform(0, self.noise_stddev)
+        stochastic_slippage = np.abs(self.np_random.normal(0, self.noise_stddev))
 
         slippage_coefficient = np.minimum(1.0, self.adjust_impact_coeff * deterministic_slippage + stochastic_slippage)
         

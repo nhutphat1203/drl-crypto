@@ -55,7 +55,8 @@ def main():
                   f"Eq: ${step_info['equity']:,.2f} | "
                   f"Balance: ${step_info['balance']:,.2f} | "
                   f"Coin: {step_info['crypto_quantity']:.6f} | "
-                  f"Total trade: {step_info['total_trades']} | "
+                  f"Total buy: {step_info['total_buy']} | "
+                  f"Total sell: {step_info['total_sell']} | "
                   f"Price: {step_info['price']:.2f} | "
                   f"Term: {terminated} | Trunc: {truncated}")
               

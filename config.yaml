@@ -5,7 +5,7 @@ settings:
   checkpoint_freq: 200000
   checkpoint_name_pfx: "model_checkpoint"
   best_model_save_path: "best_model"
-  eval_freq: 300000
+  eval_freq: 100000
   tensorboard_log: "tensorboard/"
   device: "cpu"
   train_verbose: 0

@@ -35,8 +35,8 @@ class Trainer:
         train_env = self.train_env
         val_env = self.val_env
         early_stopping_callback = StopTrainingOnNoModelImprovement(
-            max_no_improvement_evals=30,
-            min_evals=12,              
+            max_no_improvement_evals=11,
+            min_evals=10,              
             verbose=1
         )
         eval_callback = EvalCallback(

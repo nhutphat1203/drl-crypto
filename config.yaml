@@ -8,14 +8,14 @@ settings:
   eval_freq: 300000
   tensorboard_log: "tensorboard/"
   device: "cpu"
-  train_verbose: 1
+  train_verbose: 0
   eval_verbose: 1
 
 model_env:
   window_size: 24
   initial_balance: 100000
   tick_per_episode: 2160
-  seed: 475
+  seed: 28937
 
 parameters:
   total_timesteps: 3000000

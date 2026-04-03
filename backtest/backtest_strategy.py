@@ -95,24 +95,36 @@ def backtest(df_strategy, name_strategy, file_name, backtest_folder, benchmark: 
     folder_path = backtest_folder
     os.makedirs(folder_path, exist_ok=True)
     name_file = f'{file_name}_back_test_report.html'
-    if benchmark is not None:
-        qs.reports.html(
-            returns, 
-            output=f'{folder_path}/{name_file}', 
-            title='Backtest', 
-            periods_per_year=trading_periods_per_year,
-            rf=rf,
-            benchmark=benchmark,
-            benchmark_title=benchmark.name,
-        )
-    else:
-        qs.reports.html(
-            returns, 
-            output=f'{folder_path}/{name_file}', 
-            title='Backtest', 
-            periods_per_year=trading_periods_per_year,
-            rf=rf,
-        )
+    try:
+        if benchmark is not None:
+            qs.reports.html(
+                returns, 
+                output=f'{folder_path}/{name_file}', 
+                title='Backtest', 
+                periods_per_year=trading_periods_per_year,
+                rf=rf,
+                benchmark=benchmark,
+                benchmark_title=benchmark.name,
+            )
+        else:
+            qs.reports.html(
+                returns, 
+                output=f'{folder_path}/{name_file}', 
+                title='Backtest', 
+                periods_per_year=trading_periods_per_year,
+                rf=rf,
+            )
+        print(f"Đã xuất báo cáo backtest thành công tại: {folder_path}/{name_file}")
+        
+    except ValueError as e:
+        if "identical" in str(e).lower():
+            print(f"\n⚠️ [BỎ QUA HTML] Chiến lược '{name_strategy}' trên {file_name} không có biến động lợi nhuận (AI giữ nguyên tiền).")
+            print("=> Backtest vẫn chạy tiếp tục cho các dữ liệu khác...\n")
+        else:
+            print(f"\n⚠️ [LỖI QUANTSTATS] Không thể vẽ biểu đồ cho {file_name}: {e}\n")
+            
+    except Exception as e:
+        print(f"\n⚠️ [LỖI KHÔNG XÁC ĐỊNH] Không thể tạo báo cáo html cho {file_name}: {e}\n")
 
 def backtest_model(model, env, name_strategy, file_name, backtest_folder, benchmark: Benchmark=None):
     obs = env.reset()
@@ -133,25 +145,3 @@ def backtest_model(model, env, name_strategy, file_name, backtest_folder, benchm
     df = df[~df.index.duplicated(keep='last')]
     df = df.resample('15min').ffill()
     backtest(df, name_strategy, file_name, backtest_folder, benchmark)
-
-if __name__ == "__main__":
-    config = load_config('config.yaml')
-    info = {
-        "btc": "dataprocessed/binance_BTC_USDT_2020_2026_15m_processed.csv",
-        # "eth": "dataprocessed/binance_ETH_USDT_2020_2026_15m_processed.csv"
-    }
-    
-    for key, value in info.items():
-        if not os.path.exists(value):
-            continue
-        data = load_data(value)
-        train_data, eval_data, test_data = train_eval_test_split(data, train_ratio=0.8, eval_ratio=0.1)
-        
-        b_h_df = strategy_buy_and_hold(
-            data=test_data, 
-            initial_balance=config.model_env.initial_balance, 
-            window_size=config.model_env.window_size, 
-            episode_length=config.model_env.tick_per_episode,
-        )
-        
-        backtest(b_h_df, "B&H", f"{key}_b_h")

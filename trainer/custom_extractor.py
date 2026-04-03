@@ -5,7 +5,7 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import numpy as np
  
 class GRUExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 128):
+    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
         
         ts_shape = observation_space.spaces["time_series"].shape
@@ -15,7 +15,7 @@ class GRUExtractor(BaseFeaturesExtractor):
         port_input_dim = port_shape[0]
 
         # --- NHÁNH 1: TIME SERIES (GRU) ---
-        self.gru_hidden_dim = 48
+        self.gru_hidden_dim = 56
         self.gru = nn.GRU(
             input_size=num_ts_features,
             hidden_size=self.gru_hidden_dim,
@@ -71,7 +71,7 @@ class GRUExtractor(BaseFeaturesExtractor):
         return self.fusion_mlp(combined) 
 
 class LSTMExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 128):
+    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
         
         ts_shape = observation_space.spaces["time_series"].shape
@@ -81,7 +81,7 @@ class LSTMExtractor(BaseFeaturesExtractor):
         port_input_dim = port_shape[0]
 
         # --- NHÁNH 1: TIME SERIES (LSTM) ---
-        self.lstm_hidden_dim = 48
+        self.lstm_hidden_dim = 56
         self.lstm = nn.LSTM(
             input_size=num_ts_features,
             hidden_size=self.lstm_hidden_dim,

@@ -1,3 +1,4 @@
+import pathlib
 import sys
 import os
 import argparse
@@ -7,6 +8,10 @@ from config import load_config
 from preprocess.dataprocess import load_data
 from backtest.backtest_strategy import backtest_model, create_env_for_model, strategy_buy_and_hold
 from stable_baselines3 import PPO
+
+if os.name == 'nt':
+    pathlib.PosixPath = pathlib.WindowsPath 
+    
 def parse_args():
     parser = argparse.ArgumentParser(description="Huấn luyện mô hình DRL cho giao dịch tiền mã hóa")
     
@@ -69,7 +74,11 @@ if __name__ == "__main__":
             benchmark = benchmarks_returns[i]
             
             print(f'Loading model from {model_path}...')
-            model = PPO.load(model_path, env=env) 
+            try:
+                model = PPO.load(model_path, env=env, device='cpu') 
+            except Exception as e:
+                print(f"Error loading model from {model_path}: {e}")
+                continue
             print(f'Backtesting {data["name"]}...')
             backtest_folder = os.path.join(folder_path, "reports", key)
             backtest_model(model=model, env=env, name_strategy="Agent", file_name=data["name"], backtest_folder=backtest_folder, benchmark=benchmark)

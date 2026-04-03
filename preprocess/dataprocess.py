@@ -26,7 +26,9 @@ def pre_process(df):
     high_low_range = data['high'] - data['low'] + EPSILON
     data['body_ratio'] = (data['close'] - data['open']) / high_low_range
     max_open_close = data[['open', 'close']].max(axis=1)
+    min_open_close = data[['open', 'close']].min(axis=1)
     data['upper_shadow_ratio'] = (data['high'] - max_open_close) / high_low_range
+    data['lower_shadow_ratio'] = (min_open_close - data['low']) / high_low_range
 
     # 2. Multi-horizon Momentum
     horizons = [1, 4, 12, 24, 168]
@@ -38,8 +40,8 @@ def pre_process(df):
     
     volatility_horizons = [24, 168, 720]
     for h in volatility_horizons:
-        volatility_h = data['log_ret_1'].rolling(window=h).std()
-        data[f'volatility_{h}_ratio'] = data['volatility_4'] / (volatility_h + EPSILON)
+        data[f'volatility_{h}'] = data['log_ret_1'].rolling(window=h).std()
+        data[f'volatility_{h}_ratio'] = data['volatility_4'] / (data[f'volatility_{h}'] + EPSILON)
 
     # Normalized Spread
     data['spread_hl_norm'] = np.log(data['high'] / (data['low'] + EPSILON)) / (data['volatility_4'] + EPSILON)

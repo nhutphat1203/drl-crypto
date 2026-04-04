@@ -27,7 +27,7 @@ class Market(gym.Env):
         self.fee_rate_open = fee_rate_open  
         self.fee_rate_close = fee_rate_close
         self.verbose = verbose
-        self.action_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
         self.provider = DataProvider(data=self.df, window_size=self.window_size, tick_for_episode=self.episode_length, use_full_for_one_episode=self.test_mode)
         cols_to_exclude = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
         num_features = len([col for col in self.df.columns if col not in cols_to_exclude]) 
@@ -81,5 +81,4 @@ class Market(gym.Env):
             print(self.account.get_final_stats())
 
         return obs, reward, terminated, truncated, info
-    
     

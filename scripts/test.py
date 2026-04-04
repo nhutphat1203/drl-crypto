@@ -8,6 +8,8 @@ from config import load_config
 from preprocess.dataprocess import load_data
 from backtest.backtest_strategy import backtest_model, create_env_for_model, strategy_buy_and_hold
 from stable_baselines3 import PPO
+import joblib
+import pandas as pd
 
 if os.name == 'nt':
     pathlib.PosixPath = pathlib.WindowsPath 
@@ -38,17 +40,13 @@ if __name__ == "__main__":
     else:
         folder_path = f"{folder_path}_tick_{config.model_env.tick_per_episode}"
 
-    info = {
-        "btc": "dataprocessed/binance_BTC_USDT_processed.csv",
-        "eth": "dataprocessed/binance_ETH_USDT_processed.csv"
-    }
-
+    folder_data = "scaled_data"
+    keys = ["btc"]
     test = []
     print('Loading data...')
-    for key, value in info.items():
-        data = load_data(value)
-        _, _, test_data = train_eval_test_split(data, train_ratio=0.8, eval_ratio=0.1)
-        test.append({"name": key, "data": test_data})
+    for key in keys:
+        data = load_data(f"{folder_data}/{key}_test_scaled.csv")
+        test.append({"name": key, "data": data})
 
     model_paths = {
         "normal": os.path.join(folder_path, config.settings.model_save_path),

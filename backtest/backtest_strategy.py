@@ -33,7 +33,6 @@ def create_env_for_model(
     window_size: int, 
     vec_normalize_path: str  # Yêu cầu đường dẫn đến file thống kê đã lưu lúc train
 ):
-    # 1. Hàm khởi tạo môi trường gốc
     def _init() -> Market:
         return Market(
             df=data, 
@@ -45,16 +44,13 @@ def create_env_for_model(
             verbose=1
         )
     
-    # 2. Bọc bằng DummyVecEnv để đồng nhất chiều dữ liệu (batch_size = 1)
     test_venv = DummyVecEnv([_init])
-
-    # 3. Load lớp VecNormalize cùng với các thông số (mean, var) đã học từ tập Train
+    
     if os.path.exists(vec_normalize_path):
         test_venv = VecNormalize.load(vec_normalize_path, test_venv)
         test_venv.training = False      
         test_venv.norm_reward = False   
         test_venv.clip_reward = 10000.0  
-        
         print(f"Đã load thành công môi trường test với VecNormalize từ: {vec_normalize_path}")
     else:
         raise FileNotFoundError(
@@ -73,7 +69,6 @@ def strategy_buy_and_hold(data: pd.DataFrame, initial_balance: float, window_siz
     while not done:
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        action = 0.0
         history.append(
             {
                 "timestamp": info["timestamp"],

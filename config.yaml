@@ -2,30 +2,30 @@ settings:
   log_path: "logs/"
   model_save_path: "models/ppo_finance_model"
   checkpoint_path: "checkpoints/"
-  checkpoint_freq: 200000
+  checkpoint_freq: 75000       
   checkpoint_name_pfx: "model_checkpoint"
   best_model_save_path: "best_model"
-  eval_freq: 100000
+  eval_freq: 100000            
   tensorboard_log: "tensorboard/"
-  device: "cpu"
+  device: "cuda"               
   train_verbose: 0
   eval_verbose: 1
 
 model_env:
-  window_size: 24
+  window_size: 24              
   initial_balance: 100000
-  tick_per_episode: 2160
-  seed: 28937
+  tick_per_episode: 2160       
+  seed: 94376
 
 parameters:
-  total_timesteps: 3000000
+  total_timesteps: 1500000     
   learning_rate: 1e-4
   gamma: 0.99
-  n_steps: 1024
-  ent_coef: 0.01
+  n_steps: 1024               
+  ent_coef: 0.012
   clip_range: 0.2
   n_epochs: 7
-  batch_size: 256
+  batch_size: 256          
   gae_lambda: 0.95
   vf_coef: 0.5
   max_grad_norm: 0.5

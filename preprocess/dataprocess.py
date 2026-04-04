@@ -66,7 +66,7 @@ def pre_process(df):
 
     data['signed_vol_pressure'] = (log_signed_volume - mean_vol) / (std_vol + EPSILON)
 
-    data = data.loc[(data.index >= '2020-01-01') & (data.index <= '2026-03-31')]
+    data = data.loc[(data.index >= '2020-01-01') & (data.index < '2026-01-01')]
     data = data.dropna()
     return data
 

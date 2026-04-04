@@ -2,7 +2,7 @@ from typing import List
 import pandas as pd
 import numpy as np
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, SubprocVecEnv
 from sb3_contrib.common.wrappers import ActionMasker
 from .trainer import Trainer
 import os
@@ -45,29 +45,32 @@ def get_trainer(data_metadata: List[DataMetadata],
             return env
         return _init
 
-    train_env_fns = [make_env(meta.data_train, i, verbose=config.settings.train_verbose) for i, meta in enumerate(data_metadata)]
-    train_venv = DummyVecEnv(train_env_fns)
+    data_meta = data_metadata[0]
+    n_envs = 2
+
+    train_env_fns = [make_env(data_meta.data_train, i, verbose=config.settings.train_verbose) for i in range(n_envs)]
+    train_venv = SubprocVecEnv(train_env_fns)
     train_venv.seed(seed)
 
     train_venv = VecNormalize(
         train_venv, 
-        norm_obs=True, 
+        norm_obs=False, 
         norm_reward=True, 
         clip_obs=10.,
         gamma=config.parameters.gamma
     )
 
-    val_env_fns = [make_env(meta.data_val, i, test_mode=True, verbose=config.settings.eval_verbose) for i, meta in enumerate(data_metadata)]
+    val_env_fns = [make_env(data_meta.data_val, 0, test_mode=True, verbose=config.settings.eval_verbose)]
     val_venv = DummyVecEnv(val_env_fns)
     val_venv.seed(seed)
+    
     val_venv = VecNormalize(
         val_venv, 
-        norm_obs=True, 
+        norm_obs=False, 
         norm_reward=False,
         clip_obs=10.
     )
-
-    val_venv.obs_rms = train_venv.obs_rms 
+    
     val_venv.training = False
 
     trainer = Trainer(

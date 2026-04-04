@@ -103,12 +103,6 @@ def download_and_save_crypto_data(symbol, start_year, end_year, timeframe='1h', 
 download_and_save_crypto_data(
     symbol='BTC/USDT', 
     start_year=2019, 
-    end_year=2026,
-    timeframe='1h'
-)
-download_and_save_crypto_data(
-    symbol='ETH/USDT', 
-    start_year=2019, 
-    end_year=2026,
+    end_year=2025,
     timeframe='1h'
 )

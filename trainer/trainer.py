@@ -67,7 +67,7 @@ class Trainer:
             extractor_type = LSTMExtractor
 
         policy_kwargs = dict(
-            net_arch=dict(pi=[200], vf=[200]),
+            net_arch=dict(pi=[100, 72], vf=[100, 72]),
             activation_fn=th.nn.GELU,
             optimizer_class=th.optim.AdamW,
             optimizer_kwargs=dict(
@@ -75,7 +75,7 @@ class Trainer:
                 weight_decay=1e-4
             ),
             features_extractor_class=extractor_type,
-            features_extractor_kwargs=dict(features_dim=256),
+            features_extractor_kwargs=dict(features_dim=128),
         )
         model = PPO(
             "MultiInputPolicy", 

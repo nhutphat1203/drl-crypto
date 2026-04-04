@@ -67,12 +67,12 @@ class Trainer:
             extractor_type = LSTMExtractor
 
         policy_kwargs = dict(
-            net_arch=dict(pi=[100, 72], vf=[100, 72]),
+            net_arch=dict(pi=[128], vf=[128]), 
             activation_fn=th.nn.GELU,
             optimizer_class=th.optim.AdamW,
             optimizer_kwargs=dict(
                 eps=1e-5,
-                weight_decay=1e-4
+                weight_decay=1e-5
             ),
             features_extractor_class=extractor_type,
             features_extractor_kwargs=dict(features_dim=128),

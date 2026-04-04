@@ -4,31 +4,80 @@ from gymnasium import spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import numpy as np
  
+import torch as th
+import torch.nn as nn
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from gymnasium import spaces
+
+class MultiHeadAttentionPooling(nn.Module):
+    def __init__(self, hidden_dim: int, num_heads: int):
+        super().__init__()
+        self.num_heads = num_heads
+        self.attention = nn.Linear(hidden_dim, num_heads)
+
+    def forward(self, x: th.Tensor) -> th.Tensor:
+        # x shape: (batch_size, window_size, hidden_dim)
+        
+        # 1. Tính điểm attention cho từng time step trên mỗi head
+        # scores shape: (batch_size, window_size, num_heads)
+        scores = self.attention(x)
+        
+        # 2. Áp dụng Softmax dọc theo chiều thời gian (window_size)
+        # weights shape: (batch_size, window_size, num_heads)
+        weights = th.softmax(scores, dim=1)
+        
+        # 3. Nhân có trọng số (Context Vector)
+        # Sử dụng einsum để tính toán nhanh ma trận đa chiều
+        # b: batch, s: window_size, h: heads, d: hidden_dim
+        # context shape: (batch_size, num_heads, hidden_dim)
+        context = th.einsum("bsh,bsd->bhd", weights, x)
+        
+        # 4. Flatten các heads lại thành một vector biểu diễn duy nhất
+        # Output shape: (batch_size, num_heads * hidden_dim)
+        return context.reshape(context.shape[0], -1)
+
+
 class GRUExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 128):
+    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256, num_heads: int = 4):
         super().__init__(observation_space, features_dim)       
+        
         ts_shape = observation_space.spaces["time_series"].shape
         port_shape = observation_space.spaces["portfolio_features"].shape
-        num_ts_features = ts_shape[1]
+        window_size = ts_shape[0] 
+        num_ts_features = ts_shape[1]  
         port_input_dim = port_shape[0]
-        # 1. Nhánh Time Series
+        print(f"GRUExtractor - Time Series Shape: {ts_shape}, Portfolio Shape: {port_shape}")
+        print(f"Window Size: {window_size}")
+        
         self.gru_hidden_dim = 42
-        self.gru_output_dim = self.gru_hidden_dim * 3  # (Last + Max + Mean)
+        self.num_heads = num_heads
+        
+        # GRU Layer
         self.gru = nn.GRU(
             input_size=num_ts_features,
             hidden_size=self.gru_hidden_dim,
             num_layers=1,
             batch_first=True,
-        )
-        self.ts_norm = nn.LayerNorm(self.gru_output_dim)
-        # 2. Khối Fusion 
-        # Nối: (42 * 3) + 4 = 130 chiều
-        concat_dim = self.gru_output_dim + port_input_dim 
+        )       
+        
+        # Lớp Multi-Head Attention Pooling
+        self.attention_pool = MultiHeadAttentionPooling(self.gru_hidden_dim, self.num_heads)
+        
+        # Kích thước sau Attention thay vì Flatten toàn bộ chuỗi
+        self.attention_output_dim = self.num_heads * self.gru_hidden_dim
+        
+        # Cập nhật LayerNorm theo kích thước mới
+        self.ts_norm = nn.LayerNorm(self.attention_output_dim)
+
+        # Tính toán lại số chiều đưa vào Fusion MLP
+        concat_dim = self.attention_output_dim + port_input_dim 
+        
         self.fusion_mlp = nn.Sequential(
             nn.Linear(concat_dim, features_dim),
             nn.GELU(),
+            nn.LayerNorm(features_dim),
         )
-        # Khởi tạo trọng số
+
         self._initialize_weights()
         
     def _initialize_weights(self):
@@ -43,17 +92,20 @@ class GRUExtractor(BaseFeaturesExtractor):
     def forward(self, observations: dict) -> th.Tensor:
         ts_data = observations["time_series"]
         port_data = observations["portfolio_features"]
-        # 1. Chạy qua GRU
+        
+        # 1. Trích xuất đặc trưng thời gian với GRU
+        # gru_out shape: (batch_size, window_size, gru_hidden_dim)
         gru_out, _ = self.gru(ts_data)
-        # 2. Trích xuất (Last + Max + Mean)
-        last_state = gru_out[:, -1, :] 
-        max_pool = th.max(gru_out, dim=1)[0] 
-        mean_pool = th.mean(gru_out, dim=1)
-        ts_features = th.cat([last_state, max_pool, mean_pool], dim=1)
-        layer_normed_ts = self.ts_norm(ts_features)
-        # 3. Gộp (Concat) trực tiếp với port_data (ĐÃ SỬA LỖI GỌI HÀM)
-        combined = th.cat([layer_normed_ts, port_data], dim=1) 
-        # 4. Fusion
+        
+        # 2. Giảm chiều thời gian bằng Multi-Head Attention (Thay cho flatten)
+        # ts_features shape: (batch_size, num_heads * gru_hidden_dim)
+        ts_features = self.attention_pool(gru_out)
+        
+        # 3. Chuẩn hóa đặc trưng
+        ts_features = self.ts_norm(ts_features)
+        
+        # 4. Gộp với đặc trưng danh mục và đưa vào Policy/Value Net
+        combined = th.cat([ts_features, port_data], dim=1) 
         return self.fusion_mlp(combined)
 
 class LSTMExtractor(BaseFeaturesExtractor):

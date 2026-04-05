@@ -43,6 +43,7 @@ class Account:
     total_slippage: float = field(init=False, default=0.0)
     debugs: list = field(init=False, default_factory=list)
     counter_reset: int = field(init=False, default=0)
+    prev_price: Optional[float] = field(init=False, default=None)
     
     def __post_init__(self):
         self.balance = self.initial_balance
@@ -64,6 +65,7 @@ class Account:
         self.total_slippage = 0.0
         self.counter_reset += 1
         self.debugs = []
+        self.prev_price = None
 
     def step(self, a: float, ohlcv: OHLCV):
         """interface for agent to perform an order
@@ -111,9 +113,11 @@ class Account:
                 self.total_sell += 1
                 self.total_slippage += (price_ideal - price_execute) * amount_crypto_sell
         
+        if self.prev_price is None:
+            self.prev_price = ohlcv.open
         # Update equity after the trade
         self.equity = self.balance + self.crypto_quantity * price_close
-        reward = self.reward()
+        reward = self.reward(price_close, self.prev_price)
         terminated = self.equity <= self.initial_balance * 0.1
         fiat_ratio = self.balance / self.equity
         crypto_ratio = 1 - fiat_ratio
@@ -123,16 +127,17 @@ class Account:
             log_return_total=np.log(self.equity / self.initial_balance),
             log_return_step=np.log(self.equity / self.prev_equity),
         )
-
+        self.prev_price = price_close
         return AccountState(
             reward=reward,
             terminated=terminated,
             portfolio_features=portfolio_features
         )
 
-    def reward(self) -> float:
+    def reward(self, price, prev_price) -> float:
         r = np.log(self.equity / self.prev_equity)
-        return r
+        p = np.log(price / prev_price)
+        return r - p
         
     def get_equity(self) -> float:
         return self.equity

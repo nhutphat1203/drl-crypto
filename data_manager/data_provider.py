@@ -24,8 +24,11 @@ class DataProvider:
             raise ValueError("window_size is greater than tick_for_episode")
         if self.tick_for_episode > data_length:
             raise ValueError("tick_for_episode is greater than data length")
-        self.list_indices = list(range(self.tick_for_episode - 1, data_length))
+        self.stride = 1000
+        self.data_length = data_length
+        self.list_indices = list(range(self.tick_for_episode - 1, self.data_length, self.stride))
         self.generator = None
+        self.is_first = True
 
     def reset(self, np_random: np.random.Generator):
         flag = False
@@ -37,6 +40,11 @@ class DataProvider:
 
     def next_episode(self) -> Episode:
         if self.current_index >= len(self.list_indices):
+            if self.is_first:
+                self.is_first = False
+            else:
+                self.stride = max(1, self.stride // 2)
+                self.list_indices = list(range(self.tick_for_episode - 1, self.data_length, self.stride))
             self.generator.shuffle(self.list_indices)
             self.current_index = 0
         last_index = self.list_indices[self.current_index]

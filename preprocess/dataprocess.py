@@ -8,33 +8,24 @@ def load_data(path):
 def pre_process(df):
     data = df.copy()
     EPSILON = 1e-8
-    
     delta = data.index.to_series().diff()
     delta_time = delta.dt.total_seconds() / 3600
     delta_time = delta_time.fillna(1).astype(int)
     data['log_time_gap'] = np.log(delta_time)
-
     # 1. Temporal Features
     hours = data.index.hour
-    day_of_week = data.index.dayofweek
     data['hour_sin'] = np.sin(2 * np.pi * hours / 24)
     data['hour_cos'] = np.cos(2 * np.pi * hours / 24)
-    data['dow_sin'] = np.sin(2 * np.pi * day_of_week / 7)
-    data['dow_cos'] = np.cos(2 * np.pi * day_of_week / 7)
-
     # 1. Price structure
     high_low_range = data['high'] - data['low'] + EPSILON
     data['body_ratio'] = (data['close'] - data['open']) / high_low_range
-
     # 2. Multi-horizon Momentum
-    horizons = [1, 4, 12, 24, 168]
+    horizons = [1, 4, 24]
     for h in horizons:
         data[f'log_ret_{h}'] = np.log(data['close'] / data['close'].shift(h))
-
     # 3. Volatility & Risk Representation
     data['volatility_4'] = data['log_ret_1'].rolling(window=4).std()
-    
-    volatility_horizons = [24, 168]
+    volatility_horizons = [24]
     for h in volatility_horizons:
         volatility_h = data['log_ret_1'].rolling(window=h).std()
         data[f'volatility_{h}_ratio'] = data['volatility_4'] / (volatility_h + EPSILON)
@@ -53,12 +44,6 @@ def pre_process(df):
     # Indicator
     # RSI (Relative Strength Index) - Momentum & Overbought/Oversold
     data['rsi_14'] = ta.RSI(data['close'], timeperiod=14) / 100.0
-    data['rsi_24'] = ta.RSI(data['close'], timeperiod=24) / 100.0
-    #MACD (Moving Average Convergence Divergence) - Trend & Momentum
-    macd, macdsignal, macdhist = ta.MACD(data['close'], fastperiod=12, slowperiod=26, signalperiod=9)
-    data['macd_norm'] = macd / (data['close'] + EPSILON)
-    data['macd_signal_norm'] = macdsignal / (data['close'] + EPSILON)
-    data['macd_hist_norm'] = macdhist / (data['close'] + EPSILON)
     # Bollinger Bands %B (Volatility & Price Position)
     upper, middle, lower = ta.BBANDS(data['close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
     data['bb_percent_b'] = (data['close'] - lower) / (upper - lower + EPSILON)

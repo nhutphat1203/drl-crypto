@@ -29,8 +29,8 @@ class Account:
     initial_balance: float
     fee_open_percent: float = 0.001
     fee_close_percent: float = 0.001
-    slippage_rate: float = 0.0003
-    threshold_rebalance: float = 0.05
+    slippage_rate: float = 0.0001
+    threshold_rebalance: float = 0.005
     balance: float = field(init=False, default=0.0)
     crypto_quantity: float = field(init=False, default=0.0)
     equity: float = field(init=False, default=0.0)
@@ -145,7 +145,8 @@ class Account:
 
     def reward(self, price, prev_price) -> float:
         r = (self.equity - self.prev_equity) / self.prev_equity
-        return r
+        p = (price - prev_price) / prev_price
+        return r - p * 0.9
         
     def get_equity(self) -> float:
         return self.equity

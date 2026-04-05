@@ -12,10 +12,10 @@ settings:
   eval_verbose: 1
 
 model_env:
-  window_size: 16        
+  window_size: 24        
   initial_balance: 100000
   tick_per_episode: 2160      
-  seed: 72369
+  seed: 719723
 
 parameters:
   total_timesteps: 2300000  

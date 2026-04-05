@@ -39,6 +39,8 @@ class GRUExtractor(BaseFeaturesExtractor):
         print(f"GRUExtractor - Time Series Shape: {ts_shape}, Portfolio Shape: {port_shape}")
         print(f"Window Size: {window_size}")
         
+        self.input_norm = nn.LayerNorm(num_ts_features)
+        
         self.gru_hidden_dim = 128
         
         # 1. GRU Layer
@@ -78,85 +80,14 @@ class GRUExtractor(BaseFeaturesExtractor):
         ts_data = observations["time_series"]
         port_data = observations["portfolio_features"]
         
+        ts_data = self.input_norm(ts_data)
+            
         gru_out, _ = self.gru(ts_data)
         
         context_vector = self.attention(gru_out)
         context_vector_norm = self.layer_norm(context_vector)
         
         combined = th.cat([context_vector_norm, port_data], dim=1) 
-        return self.fusion_mlp(combined)
-    
-class GRUPoolingExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
-        super().__init__(observation_space, features_dim)       
-        
-        ts_shape = observation_space.spaces["time_series"].shape
-        port_shape = observation_space.spaces["portfolio_features"].shape
-        
-        window_size = ts_shape[0] 
-        num_ts_features = ts_shape[1]  
-        port_input_dim = port_shape[0]
-        
-        print(f"GRUPoolingExtractor - Time Series: {ts_shape}, Portfolio: {port_shape}")
-        print(f"Window Size: {window_size}")
-        
-        self.gru_hidden_dim = 64
-        
-        # 1. GRU Layer
-        self.gru = nn.GRU(
-            input_size=num_ts_features,
-            hidden_size=self.gru_hidden_dim,
-            num_layers=1,
-            batch_first=True,
-        )       
-        
-        # Kích thước sau khi pooling
-        self.pool_out_dim = self.gru_hidden_dim * 3
-        
-        self.layer_norm = nn.LayerNorm(self.pool_out_dim)
-        
-        concat_dim = self.pool_out_dim + port_input_dim
-        
-        # Lớp gộp cuối cùng
-        self.fusion_mlp = nn.Sequential(
-            nn.LayerNorm(concat_dim),
-            nn.Linear(concat_dim, features_dim),
-            nn.GELU(),
-            nn.LayerNorm(features_dim)
-        )
-
-        self._initialize_weights()
-        
-    def _initialize_weights(self):
-        for name, param in self.gru.named_parameters():
-            if 'weight_ih' in name:
-                nn.init.xavier_uniform_(param.data)
-            elif 'weight_hh' in name:
-                nn.init.orthogonal_(param.data)
-            elif 'bias' in name:
-                nn.init.zeros_(param.data)
-
-    def forward(self, observations: dict) -> th.Tensor:
-        ts_data = observations["time_series"]
-        port_data = observations["portfolio_features"]
-        
-        # 1. Đi qua mạng GRU
-        # gru_out có kích thước: (batch_size, window_size, gru_hidden_dim)
-        gru_out, _ = self.gru(ts_data)
-        
-        # 2. Thực hiện Pooling dọc theo trục thời gian (dim=1)
-        last_state = gru_out[:, -1, :]              # Lấy trạng thái của timestep cuối cùng
-        max_pool, _ = th.max(gru_out, dim=1)        # Trích xuất các giá trị cực đại (đột biến)
-        mean_pool = th.mean(gru_out, dim=1)         # Trích xuất giá trị trung bình (xu hướng)
-        
-        # 3. Gộp cả 3 bộ đặc trưng
-        # Kết quả: vector có kích thước (batch_size, gru_hidden_dim * 3)
-        context_vector = th.cat([last_state, max_pool, mean_pool], dim=1)
-        
-        # 4. Chuẩn hóa và gộp với Portfolio
-        context_vector_norm = self.layer_norm(context_vector)
-        combined = th.cat([context_vector_norm, port_data], dim=1) 
-        
         return self.fusion_mlp(combined)
 
 class LSTMExtractor(BaseFeaturesExtractor):

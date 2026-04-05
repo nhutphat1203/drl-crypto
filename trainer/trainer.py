@@ -12,7 +12,7 @@ from typing import Callable
 from config import Config
 import os
 from dataclasses import dataclass, field
-from trainer.custom_extractor import GRUExtractor, LSTMExtractor, CNN1DExtractor
+from trainer.custom_extractor import GRUExtractor, GRUPoolingExtractor, LSTMExtractor, CNN1DExtractor
 
 def linear_schedule(initial_value: float) -> Callable[[float], float]:
     """
@@ -65,17 +65,19 @@ class Trainer:
             extractor_type = GRUExtractor
         elif self.extractor_type == 'LSTM':
             extractor_type = LSTMExtractor
+        elif self.extractor_type == 'GRUPooling':
+            extractor_type = GRUPoolingExtractor
 
         policy_kwargs = dict(
-            net_arch=dict(pi=[256], vf=[256]), 
+            net_arch=dict(pi=[128, 128], vf=[128, 128]), 
             activation_fn=th.nn.GELU,
             optimizer_class=th.optim.AdamW,
             optimizer_kwargs=dict(
                 eps=1e-5,
-                weight_decay=1e-5
+                weight_decay=1e-4
             ),
             features_extractor_class=extractor_type,
-            features_extractor_kwargs=dict(features_dim=256),
+            features_extractor_kwargs=dict(features_dim=128),
         )
         model = PPO(
             "MultiInputPolicy", 

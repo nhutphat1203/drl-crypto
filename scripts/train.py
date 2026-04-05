@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument('--config', type=str, default='config.yaml', 
                         help='Đường dẫn tới file config.yaml')
     
-    parser.add_argument('--extractor_type', type=str, choices=['CNN', 'LSTM', 'GRU'], required=True, 
+    parser.add_argument('--extractor_type', type=str, choices=['CNN', 'LSTM', 'GRU', 'GRUPooling'], required=True, 
                         help='Loại extractor muốn sử dụng')
 
     parser.add_argument('--tick_episode', type=int, default=None, 

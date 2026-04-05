@@ -13,8 +13,8 @@ class Market(gym.Env):
                 initial_balance: float,
                 window_size: int, 
                 episode_length: int, 
-                fee_rate_open: float = 0.01,
-                fee_rate_close: float = 0.01,
+                fee_rate_open: float = 0.001,
+                fee_rate_close: float = 0.001,
                 test_mode: bool = False,
                 verbose: int = 0):
         super().__init__()

@@ -38,21 +38,22 @@ class MultiHeadAttentionPooling(nn.Module):
 
 
 class GRUExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256, num_heads: int = 4):
+    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
         super().__init__(observation_space, features_dim)       
         
         ts_shape = observation_space.spaces["time_series"].shape
         port_shape = observation_space.spaces["portfolio_features"].shape
+        
         window_size = ts_shape[0] 
         num_ts_features = ts_shape[1]  
         port_input_dim = port_shape[0]
+        
         print(f"GRUExtractor - Time Series Shape: {ts_shape}, Portfolio Shape: {port_shape}")
         print(f"Window Size: {window_size}")
         
-        self.gru_hidden_dim = 42
-        self.num_heads = num_heads
+        self.gru_hidden_dim = 64
         
-        # GRU Layer
+        # 1. GRU Layer
         self.gru = nn.GRU(
             input_size=num_ts_features,
             hidden_size=self.gru_hidden_dim,
@@ -60,22 +61,25 @@ class GRUExtractor(BaseFeaturesExtractor):
             batch_first=True,
         )       
         
-        # Lớp Multi-Head Attention Pooling
-        self.attention_pool = MultiHeadAttentionPooling(self.gru_hidden_dim, self.num_heads)
+        # SỬA LỖI 1: Chiều sau khi Flatten phải nhân với window_size
+        self.gru_flatten_dim = window_size * self.gru_hidden_dim
+        mlp_summary_out_dim = 512
         
-        # Kích thước sau Attention thay vì Flatten toàn bộ chuỗi
-        self.attention_output_dim = self.num_heads * self.gru_hidden_dim
+        # SỬA LỖI 2: Đưa gru_flatten_dim vào Linear
+        self.mlp_summary = nn.Sequential(
+            nn.LayerNorm(self.gru_flatten_dim),
+            nn.Linear(self.gru_flatten_dim, mlp_summary_out_dim),
+            nn.GELU(),
+        )
         
-        # Cập nhật LayerNorm theo kích thước mới
-        self.ts_norm = nn.LayerNorm(self.attention_output_dim)
-
-        # Tính toán lại số chiều đưa vào Fusion MLP
-        concat_dim = self.attention_output_dim + port_input_dim 
+        concat_dim = mlp_summary_out_dim + port_input_dim
         
+        # Lớp gộp cuối cùng
         self.fusion_mlp = nn.Sequential(
+            nn.LayerNorm(concat_dim),
             nn.Linear(concat_dim, features_dim),
             nn.GELU(),
-            nn.LayerNorm(features_dim),
+            nn.LayerNorm(features_dim)
         )
 
         self._initialize_weights()
@@ -94,17 +98,15 @@ class GRUExtractor(BaseFeaturesExtractor):
         port_data = observations["portfolio_features"]
         
         # 1. Trích xuất đặc trưng thời gian với GRU
-        # gru_out shape: (batch_size, window_size, gru_hidden_dim)
         gru_out, _ = self.gru(ts_data)
         
-        # 2. Giảm chiều thời gian bằng Multi-Head Attention (Thay cho flatten)
-        # ts_features shape: (batch_size, num_heads * gru_hidden_dim)
-        ts_features = self.attention_pool(gru_out)
+        # 2. Trải phẳng (Flatten) thay vì dùng Attention
+        gru_out_flat = gru_out.reshape(gru_out.shape[0], -1)
         
-        # 3. Chuẩn hóa đặc trưng
-        ts_features = self.ts_norm(ts_features)
+        # 3. Đưa qua MLP để tóm tắt
+        ts_features = self.mlp_summary(gru_out_flat)
         
-        # 4. Gộp với đặc trưng danh mục và đưa vào Policy/Value Net
+        # 4. Gộp với Portfolio và xuất ra
         combined = th.cat([ts_features, port_data], dim=1) 
         return self.fusion_mlp(combined)
 
@@ -112,128 +114,153 @@ class LSTMExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
         
-        ts_shape = observation_space.spaces["time_series"].shape
-        port_shape = observation_space.spaces["portfolio_features"].shape
+        # Lấy thông số từ không gian quan sát
+        ts_shape = observation_space.spaces["time_series"].shape # (window_size, features)
+        port_shape = observation_space.spaces["portfolio_features"].shape # (4,)
         
-        num_ts_features = ts_shape[1]
+        window_size = ts_shape[0] 
+        num_ts_features = ts_shape[1]  
         port_input_dim = port_shape[0]
-
-        # --- NHÁNH 1: TIME SERIES (LSTM) ---
-        self.lstm_hidden_dim = 56
+        
+        # --- CẤU HÌNH SIÊU THAM SỐ ---
+        self.lstm_hidden_dim = 64 # Giữ 64 để tương đương với sức mạnh của GRU bạn đang dùng
+        mlp_summary_out_dim = 512
+        
+        # 1. Nhánh LSTM
         self.lstm = nn.LSTM(
             input_size=num_ts_features,
             hidden_size=self.lstm_hidden_dim,
             num_layers=1,
             batch_first=True,
-        )
-
-        # --- NHÁNH 2: PORTFOLIO (MLP) ---
-        self.port_out_dim = 16
-        self.port_hidden_dim = 32
-        self.portfolio_mlp = nn.Sequential(
-            nn.Linear(port_input_dim, self.port_hidden_dim),
+        ) 
+        
+        # 2. Khối tóm tắt chuỗi (Flatten All Hidden States)
+        # Chiều sau khi Flatten = window_size * lstm_hidden_dim
+        self.lstm_flatten_dim = window_size * self.lstm_hidden_dim
+        
+        self.mlp_summary = nn.Sequential(
+            nn.LayerNorm(self.lstm_flatten_dim),
+            nn.Linear(self.lstm_flatten_dim, mlp_summary_out_dim),
             nn.GELU(),
-            nn.Linear(self.port_hidden_dim, self.port_out_dim),
         )
-
-        # --- NHÁNH 3: FUSION MLP ---
-        self.ts_feature_dim = self.lstm_hidden_dim * 3 
-        concat_dim = self.ts_feature_dim + self.port_out_dim
+        
+        # 3. Khối Fusion (Kết hợp TS Features + Portfolio Features)
+        concat_dim = mlp_summary_out_dim + port_input_dim
         
         self.fusion_mlp = nn.Sequential(
             nn.LayerNorm(concat_dim),
             nn.Linear(concat_dim, features_dim),
+            nn.GELU(),
+            nn.LayerNorm(features_dim)
         )
+
+        self._initialize_weights()
+        
+    def _initialize_weights(self):
+        # Khởi tạo trọng số cho LSTM (Khác một chút so với GRU do có nhiều cổng hơn)
+        for name, param in self.lstm.named_parameters():
+            if 'weight_ih' in name:
+                nn.init.xavier_uniform_(param.data)
+            elif 'weight_hh' in name:
+                nn.init.orthogonal_(param.data)
+            elif 'bias' in name:
+                # Kỹ thuật chuyên gia: Để forget gate bias ban đầu cao (1.0) 
+                # giúp mạng dễ học các phụ thuộc dài hạn ngay từ đầu
+                nn.init.zeros_(param.data)
+                n = param.size(0)
+                param.data[n//4:n//2].fill_(1.0) # Forget gate bias
 
     def forward(self, observations: dict) -> th.Tensor:
         ts_data = observations["time_series"]
         port_data = observations["portfolio_features"]
-
-        # 1. Chạy qua LSTM
-        # Lấy output (toàn bộ chuỗi hidden states), bỏ qua tuple (h_n, c_n)
+        
+        # 1. Chạy qua LSTM 
+        # LSTM trả về: (output, (h_n, c_n))
+        # output chứa toàn bộ hidden states của tất cả các timesteps
         lstm_out, _ = self.lstm(ts_data)
         
-        # 2. TRÍCH XUẤT ĐẶC TRƯNG (Last + Max + Mean)
-        last_state = lstm_out[:, -1, :] 
-        max_pool = th.max(lstm_out, dim=1)[0] 
-        mean_pool = th.mean(lstm_out, dim=1)
+        # 2. Trải phẳng (Flatten) toàn bộ hidden states (Batch, Window * Hidden)
+        lstm_out_flat = lstm_out.reshape(lstm_out.shape[0], -1)
         
-        ts_features = th.cat([last_state, max_pool, mean_pool], dim=1)
-
-        # 3. Chạy qua Portfolio MLP
-        port_features = self.portfolio_mlp(port_data)   
-
-        # 4. Gộp và Fusion
-        combined = th.cat([ts_features, port_features], dim=1) 
+        # 3. Đưa qua MLP để nén/tóm tắt đặc trưng thời gian
+        ts_features = self.mlp_summary(lstm_out_flat)
+        
+        # 4. Gộp với Portfolio và xuất ra Features cuối cùng
+        combined = th.cat([ts_features, port_data], dim=1) 
         return self.fusion_mlp(combined)
 
 class CNN1DExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: spaces.Dict, features_dim: int = 128):
+    def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
         
-        ts_shape = observation_space.spaces["time_series"].shape
-        port_shape = observation_space.spaces["portfolio_features"].shape
+        ts_shape = observation_space.spaces["time_series"].shape # (12, 23)
+        port_shape = observation_space.spaces["portfolio_features"].shape # (4,)
         
+        window_size = ts_shape[0] 
         num_ts_features = ts_shape[1]
         port_input_dim = port_shape[0]
 
         # --- NHÁNH 1: TIME SERIES (1D-CNN) ---
-        self.cnn_out_channels = 48
+        self.cnn_out_channels = 64
         
-        # Thiết kế khối CNN với 2 lớp Conv1d
         self.cnn = nn.Sequential(
-            # Lớp 1: Trích xuất các mẫu hình nến cơ bản 
+            # Lớp 1: Kernel 3 để bắt các mẫu hình nến ngắn hạn (3 nến liên tiếp)
             nn.Conv1d(in_channels=num_ts_features, out_channels=32, kernel_size=3, padding=1),
             nn.GELU(),
-            # Lớp 2: Kết hợp các mẫu hình cơ bản thành các xu hướng phức tạp hơn
-            nn.Conv1d(in_channels=32, out_channels=self.cnn_out_channels, kernel_size=3, padding=1),
-            nn.GELU()
-        )
-
-        # --- NHÁNH 2: PORTFOLIO (MLP) ---
-        self.port_out_dim = 16
-        self.port_hidden_dim = 32
-        self.portfolio_mlp = nn.Sequential(
-            nn.Linear(port_input_dim, self.port_hidden_dim),
+            nn.BatchNorm1d(32), # Giúp ổn định giá trị sau khi Conv
+            
+            # Lớp 2: Dilation=2 giúp tăng tầm nhìn lên tương đương 5 nến nhưng ít tham số hơn
+            nn.Conv1d(in_channels=32, out_channels=self.cnn_out_channels, kernel_size=3, padding=2, dilation=2),
             nn.GELU(),
-            nn.Linear(self.port_hidden_dim, self.port_out_dim),
+            nn.BatchNorm1d(self.cnn_out_channels),
+            
+            # Lớp 3: Pointwise Conv để nén thông tin channel
+            nn.Conv1d(in_channels=self.cnn_out_channels, out_channels=self.cnn_out_channels, kernel_size=1),
+            nn.GELU(),
         )
 
-        # --- NHÁNH 3: FUSION MLP ---
-        self.ts_feature_dim = self.cnn_out_channels * 3 
-        concat_dim = self.ts_feature_dim + self.port_out_dim
+        # Tính toán chiều sau khi CNN (vì padding/dilation làm thay đổi kích thước seq)
+        # Với kernel 3, padding 1 -> seq vẫn là 12. 
+        # Với kernel 3, padding 2, dilation 2 -> seq vẫn là 12.
+        self.cnn_flatten_dim = self.cnn_out_channels * window_size # 64 * 12 = 768
+        
+        # --- NHÁNH 2: FUSION MLP ---
+        # concat_dim = 768 (CNN) + 23 (Residual) + 4 (Port) = 795
+        concat_dim = self.cnn_flatten_dim + num_ts_features + port_input_dim
         
         self.fusion_mlp = nn.Sequential(
             nn.LayerNorm(concat_dim),
             nn.Linear(concat_dim, features_dim),
+            nn.GELU(),
+            nn.LayerNorm(features_dim)
         )
 
-    def forward(self, observations: dict) -> th.Tensor:
-        ts_data = observations["time_series"]
-        port_data = observations["portfolio_features"]
+        self._initialize_weights()
 
-        # 1. Chuyển đổi chiều Tensor cho Conv1d
-        # Từ (Batch, Seq, Features) -> (Batch, Features, Seq)
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
+
+    def forward(self, observations: dict) -> th.Tensor:
+        ts_data = observations["time_series"] # (Batch, 12, 23)
+        port_data = observations["portfolio_features"] # (Batch, 4)
+
+        # 1. Chuẩn bị cho Conv1d: (Batch, Features, Seq)
         ts_data_cnn = ts_data.transpose(1, 2)
         
-        # Chạy qua mạng CNN. Output shape: (Batch, cnn_out_channels, Seq)
-        cnn_out = self.cnn(ts_data_cnn)
+        # 2. Chạy qua CNN: (Batch, 64, 12)
+        cnn_feat = self.cnn(ts_data_cnn)
         
-        # Chuyển đổi lại chiều Tensor để Pooling nhất quán với cấu trúc cũ
-        # Từ (Batch, Channels, Seq) -> (Batch, Seq, Channels)
-        cnn_out = cnn_out.transpose(1, 2)
+        # 3. Làm phẳng toàn bộ đặc trưng: (Batch, 768)
+        cnn_flat = th.flatten(cnn_feat, start_dim=1)
         
-        # 2. TRÍCH XUẤT ĐẶC TRƯNG (Last + Max + Mean)
-        # last_state ở đây đại diện cho đặc trưng được tổng hợp tại cây nến cuối cùng
-        last_state = cnn_out[:, -1, :] 
-        max_pool = th.max(cnn_out, dim=1)[0] 
-        mean_pool = th.mean(cnn_out, dim=1)
+        # 4. Nhánh Residual (Nến hiện tại): (Batch, 23)
+        last_bar = ts_data[:, -1, :]
         
-        ts_features = th.cat([last_state, max_pool, mean_pool], dim=1)
-
-        # 3. Chạy qua Portfolio MLP
-        port_features = self.portfolio_mlp(port_data)   
-
-        # 4. Gộp và Fusion
-        combined = th.cat([ts_features, port_features], dim=1) 
+        # 5. Kết hợp (CNN + Residual + Portfolio)
+        combined = th.cat([cnn_flat, last_bar, port_data], dim=1) 
+        
         return self.fusion_mlp(combined)

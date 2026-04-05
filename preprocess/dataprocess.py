@@ -25,10 +25,6 @@ def pre_process(df):
     # 1. Price structure
     high_low_range = data['high'] - data['low'] + EPSILON
     data['body_ratio'] = (data['close'] - data['open']) / high_low_range
-    max_open_close = data[['open', 'close']].max(axis=1)
-    min_open_close = data[['open', 'close']].min(axis=1)
-    data['upper_shadow_ratio'] = (data['high'] - max_open_close) / high_low_range
-    data['lower_shadow_ratio'] = (min_open_close - data['low']) / high_low_range
 
     # 2. Multi-horizon Momentum
     horizons = [1, 4, 12, 24, 168]
@@ -38,10 +34,10 @@ def pre_process(df):
     # 3. Volatility & Risk Representation
     data['volatility_4'] = data['log_ret_1'].rolling(window=4).std()
     
-    volatility_horizons = [24, 168, 720]
+    volatility_horizons = [24, 168]
     for h in volatility_horizons:
-        data[f'volatility_{h}'] = data['log_ret_1'].rolling(window=h).std()
-        data[f'volatility_{h}_ratio'] = data['volatility_4'] / (data[f'volatility_{h}'] + EPSILON)
+        volatility_h = data['log_ret_1'].rolling(window=h).std()
+        data[f'volatility_{h}_ratio'] = data['volatility_4'] / (volatility_h + EPSILON)
 
     # Normalized Spread
     data['spread_hl_norm'] = np.log(data['high'] / (data['low'] + EPSILON)) / (data['volatility_4'] + EPSILON)
@@ -49,22 +45,25 @@ def pre_process(df):
     # 4. Microstructure & Volume Dynamics
     typical_price = ta.TYPPRICE(data['high'], data['low'], data['close'])
     tp_vol = typical_price * data['volume']
-    
     rolling_tp_vol = ta.SUM(tp_vol, timeperiod=24)
     rolling_vol = ta.SUM(data['volume'], timeperiod=24)
-    
     vwap_24 = rolling_tp_vol / (rolling_vol + EPSILON)
     data['dist_vwap_24'] = (data['close'] - vwap_24) / (vwap_24 + EPSILON)
-
-    # 5. Signed Volume Pressure
-    direction = np.sign(data['log_ret_1'].fillna(0))
-    log_signed_volume = np.log(1 + data['volume']) * direction
-
-    window_z = 24
-    mean_vol = ta.SMA(log_signed_volume, timeperiod=window_z)
-    std_vol = ta.STDDEV(log_signed_volume, timeperiod=window_z, nbdev=1)
-
-    data['signed_vol_pressure'] = (log_signed_volume - mean_vol) / (std_vol + EPSILON)
+    
+    # Indicator
+    # RSI (Relative Strength Index) - Momentum & Overbought/Oversold
+    data['rsi_14'] = ta.RSI(data['close'], timeperiod=14) / 100.0
+    data['rsi_24'] = ta.RSI(data['close'], timeperiod=24) / 100.0
+    #MACD (Moving Average Convergence Divergence) - Trend & Momentum
+    macd, macdsignal, macdhist = ta.MACD(data['close'], fastperiod=12, slowperiod=26, signalperiod=9)
+    data['macd_norm'] = macd / (data['close'] + EPSILON)
+    data['macd_signal_norm'] = macdsignal / (data['close'] + EPSILON)
+    data['macd_hist_norm'] = macdhist / (data['close'] + EPSILON)
+    # Bollinger Bands %B (Volatility & Price Position)
+    upper, middle, lower = ta.BBANDS(data['close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
+    data['bb_percent_b'] = (data['close'] - lower) / (upper - lower + EPSILON)
+    # 4. ADX (Average Directional Index) - Trend Strength
+    data['adx_14'] = ta.ADX(data['high'], data['low'], data['close'], timeperiod=14) / 100.0
 
     data = data.loc[(data.index >= '2020-01-01') & (data.index < '2026-01-01')]
     data = data.dropna()

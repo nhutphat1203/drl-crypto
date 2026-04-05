@@ -29,7 +29,7 @@ class Account:
     initial_balance: float
     fee_open_percent: float = 0.001
     fee_close_percent: float = 0.001
-    slippage_rate: float = 0.0005
+    slippage_rate: float = 0.0003
     threshold_rebalance: float = 0.05
     balance: float = field(init=False, default=0.0)
     crypto_quantity: float = field(init=False, default=0.0)
@@ -44,6 +44,8 @@ class Account:
     debugs: list = field(init=False, default_factory=list)
     counter_reset: int = field(init=False, default=0)
     prev_price: Optional[float] = field(init=False, default=None)
+    action_mean : float = field(init=False, default=0.0)
+    no_rebalance_count: int = field(init=False, default=0)
     
     def __post_init__(self):
         self.balance = self.initial_balance
@@ -66,6 +68,8 @@ class Account:
         self.counter_reset += 1
         self.debugs = []
         self.prev_price = None
+        self.action_mean = 0.0
+        self.no_rebalance_count = 0
 
     def step(self, a: float, ohlcv: OHLCV):
         """interface for agent to perform an order
@@ -75,6 +79,9 @@ class Account:
             ohlcv (OHLCV): The OHLCV data for the current period.
             price_close (float): The closing price of the asset.
         """
+        
+        self.action_mean = 0.9 * self.action_mean + 0.1 * a
+        
         price_ideal = ohlcv.open  # Using open price as the ideal price for the trade
         price_close = ohlcv.close  # Using close price as the closing price for the trade
         self.prev_equity = self.equity
@@ -112,6 +119,8 @@ class Account:
                 self.fee_close_total += fee_close
                 self.total_sell += 1
                 self.total_slippage += (price_ideal - price_execute) * amount_crypto_sell
+        else:
+            self.no_rebalance_count += 1
         
         if self.prev_price is None:
             self.prev_price = ohlcv.open
@@ -135,9 +144,8 @@ class Account:
         )
 
     def reward(self, price, prev_price) -> float:
-        r = np.log(self.equity / self.prev_equity)
-        p = np.log(price / prev_price)
-        return r - p
+        r = (self.equity - self.prev_equity) / self.prev_equity
+        return r
         
     def get_equity(self) -> float:
         return self.equity
@@ -175,6 +183,8 @@ class Account:
             f"cost/total_fee              | {total_fee:.6f}",
             f"cost/slippage_fee_ratio     | {slippage_fee_ratio:.4f}",
             f"cost/total_slippage         | {self.total_slippage:.6f}",
+            f"action/action_mean_ema      | {self.action_mean:.4f}",
+            f"action/no_rebalance_count   | {self.no_rebalance_count}",
             "----------------------------------------------------------",
         ]
         return "\n".join(lines)

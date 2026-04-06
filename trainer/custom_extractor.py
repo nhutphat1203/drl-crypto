@@ -100,7 +100,7 @@ class LSTMExtractor(BaseFeaturesExtractor):
         # 2. Normalization đầu vào
         self.input_norm = nn.LayerNorm(num_ts_features)
         
-        # 3. Cấu hình LSTM (Để 128 cho giống GRU của bạn)
+        # 3. Cấu hình LSTM
         self.lstm_hidden_dim = 128
         
         self.lstm = nn.LSTM(
@@ -110,7 +110,7 @@ class LSTMExtractor(BaseFeaturesExtractor):
             batch_first=True,
         )       
         
-        # 4. Attention Mechanism (Dùng lại class TemporalAttention bạn đã viết)
+        # 4. Attention Mechanism 
         self.attention = TemporalAttention(self.lstm_hidden_dim)
         
         # 5. LayerNorm sau Attention
@@ -165,43 +165,40 @@ class LSTMExtractor(BaseFeaturesExtractor):
 
 class CNN1DExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
-        super().__init__(observation_space, features_dim)
+        super().__init__(observation_space, features_dim)       
         
-        ts_shape = observation_space.spaces["time_series"].shape # (12, 23)
-        port_shape = observation_space.spaces["portfolio_features"].shape # (4,)
+        ts_shape = observation_space.spaces["time_series"].shape
+        port_shape = observation_space.spaces["portfolio_features"].shape
         
         window_size = ts_shape[0] 
-        num_ts_features = ts_shape[1]
+        num_ts_features = ts_shape[1]  
         port_input_dim = port_shape[0]
-
-        # --- NHÁNH 1: TIME SERIES (1D-CNN) ---
-        self.cnn_out_channels = 64
         
+        self.cnn_hidden_dim = 128
+        
+        # 1. Khối CNN Feature Extractor
         self.cnn = nn.Sequential(
-            # Lớp 1: Kernel 3 để bắt các mẫu hình nến ngắn hạn (3 nến liên tiếp)
-            nn.Conv1d(in_channels=num_ts_features, out_channels=32, kernel_size=3, padding=1),
+            nn.Conv1d(in_channels=num_ts_features, out_channels=64, kernel_size=3, padding=1),
+            nn.BatchNorm1d(64),
             nn.GELU(),
-            nn.BatchNorm1d(32), # Giúp ổn định giá trị sau khi Conv
+            nn.MaxPool1d(kernel_size=2), # Giảm seq_len từ 24 xuống 12
+            nn.Dropout(0.2),
             
-            # Lớp 2: Dilation=2 giúp tăng tầm nhìn lên tương đương 5 nến nhưng ít tham số hơn
-            nn.Conv1d(in_channels=32, out_channels=self.cnn_out_channels, kernel_size=3, padding=2, dilation=2),
+            nn.Conv1d(in_channels=64, out_channels=self.cnn_hidden_dim, kernel_size=3, padding=1),
+            nn.BatchNorm1d(self.cnn_hidden_dim),
             nn.GELU(),
-            nn.BatchNorm1d(self.cnn_out_channels),
-            
-            # Lớp 3: Pointwise Conv để nén thông tin channel
-            nn.Conv1d(in_channels=self.cnn_out_channels, out_channels=self.cnn_out_channels, kernel_size=1),
-            nn.GELU(),
+            nn.MaxPool1d(kernel_size=2), # Giảm seq_len từ 12 xuống 6
+            # Output shape lúc này: (batch_size, 128, 6)
         )
-
-        # Tính toán chiều sau khi CNN (vì padding/dilation làm thay đổi kích thước seq)
-        # Với kernel 3, padding 1 -> seq vẫn là 12. 
-        # Với kernel 3, padding 2, dilation 2 -> seq vẫn là 12.
-        self.cnn_flatten_dim = self.cnn_out_channels * window_size # 64 * 12 = 768
         
-        # --- NHÁNH 2: FUSION MLP ---
-        # concat_dim = 768 (CNN) + 23 (Residual) + 4 (Port) = 795
-        concat_dim = self.cnn_flatten_dim + num_ts_features + port_input_dim
+        # 2. Lớp Temporal Attention
+        self.attention = TemporalAttention(self.cnn_hidden_dim)
         
+        self.layer_norm = nn.LayerNorm(self.cnn_hidden_dim)
+        
+        concat_dim = self.cnn_hidden_dim + port_input_dim
+        
+        # 3. Lớp gộp cuối cùng
         self.fusion_mlp = nn.Sequential(
             nn.LayerNorm(concat_dim),
             nn.Linear(concat_dim, features_dim),
@@ -210,31 +207,36 @@ class CNN1DExtractor(BaseFeaturesExtractor):
         )
 
         self._initialize_weights()
-
+        
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm1d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def forward(self, observations: dict) -> th.Tensor:
-        ts_data = observations["time_series"] # (Batch, 12, 23)
-        port_data = observations["portfolio_features"] # (Batch, 4)
-
-        # 1. Chuẩn bị cho Conv1d: (Batch, Features, Seq)
-        ts_data_cnn = ts_data.transpose(1, 2)
+        ts_data = observations["time_series"]
+        port_data = observations["portfolio_features"]
         
-        # 2. Chạy qua CNN: (Batch, 64, 12)
-        cnn_feat = self.cnn(ts_data_cnn)
+        # Permute cho Conv1d: (Batch, Seq_Len, Features) -> (Batch, Features, Seq_Len)
+        ts_data = ts_data.permute(0, 2, 1) 
+            
+        cnn_out = self.cnn(ts_data) # Shape: (batch_size, 128, 6)
         
-        # 3. Làm phẳng toàn bộ đặc trưng: (Batch, 768)
-        cnn_flat = th.flatten(cnn_feat, start_dim=1)
+        # Permute ngược lại cho Temporal Attention: (Batch, Channels, Seq_Len) -> (Batch, Seq_Len, Channels)
+        cnn_out_permuted = cnn_out.permute(0, 2, 1) # Shape: (batch_size, 6, 128)
         
-        # 4. Nhánh Residual (Nến hiện tại): (Batch, 23)
-        last_bar = ts_data[:, -1, :]
+        # Đưa qua Attention
+        context_vector = self.attention(cnn_out_permuted) # Shape: (batch_size, 128)
+        context_vector_norm = self.layer_norm(context_vector)
         
-        # 5. Kết hợp (CNN + Residual + Portfolio)
-        combined = th.cat([cnn_flat, last_bar, port_data], dim=1) 
-        
+        combined = th.cat([context_vector_norm, port_data], dim=1) 
         return self.fusion_mlp(combined)

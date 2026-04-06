@@ -47,4 +47,4 @@ if __name__ == "__main__":
     n_returns = get_return(normal_model_data)
     
     test(name="normal", folder_path=path, returns=n_returns, benchmark=bh_returns)
-    test(name="best", folder_path=path, returns=n_returns, benchmark=bh_returns)
+    test(name="best", folder_path=path, returns=b_returns, benchmark=bh_returns)

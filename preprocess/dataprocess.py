@@ -50,7 +50,7 @@ def pre_process(df):
     # 4. ADX (Average Directional Index) - Trend Strength
     data['adx_14'] = ta.ADX(data['high'], data['low'], data['close'], timeperiod=14) / 100.0
 
-    data = data.loc[(data.index >= '2020-01-01') & (data.index < '2026-01-01')]
+    data = data.loc[(data.index >= '2020-01-01') & (data.index < '2026-04-01')]
     data = data.dropna()
     return data
 

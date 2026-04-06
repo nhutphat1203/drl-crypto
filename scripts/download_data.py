@@ -91,7 +91,7 @@ def download_and_save_crypto_data(symbol, start_year, end_year, timeframe='1h', 
         print(f"📁 Đã tạo thư mục: {folder}")
     
     safe_symbol = symbol.replace('/', '_')
-    file_name = f"{exchange_id}_{safe_symbol}_{start_year}_{end_year}_{timeframe}.csv"
+    file_name = f"{exchange_id}_{safe_symbol}_{timeframe}.csv"
     file_path = os.path.join(folder, file_name)
     
     df.to_csv(file_path)
@@ -103,6 +103,6 @@ def download_and_save_crypto_data(symbol, start_year, end_year, timeframe='1h', 
 download_and_save_crypto_data(
     symbol='BTC/USDT', 
     start_year=2019, 
-    end_year=2025,
+    end_year=2026,
     timeframe='1h'
 )

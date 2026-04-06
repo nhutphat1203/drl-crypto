@@ -3,7 +3,6 @@ import torch.nn as nn
 from gymnasium import spaces
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 import numpy as np
- 
 import torch as th
 import torch.nn as nn
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -35,9 +34,6 @@ class GRUExtractor(BaseFeaturesExtractor):
         window_size = ts_shape[0] 
         num_ts_features = ts_shape[1]  
         port_input_dim = port_shape[0]
-        
-        print(f"GRUExtractor - Time Series Shape: {ts_shape}, Portfolio Shape: {port_shape}")
-        print(f"Window Size: {window_size}")
         
         self.input_norm = nn.LayerNorm(num_ts_features)
         
@@ -92,40 +88,36 @@ class GRUExtractor(BaseFeaturesExtractor):
 
 class LSTMExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Dict, features_dim: int = 256):
-        super().__init__(observation_space, features_dim)
+        super().__init__(observation_space, features_dim)       
         
-        # Lấy thông số từ không gian quan sát
-        ts_shape = observation_space.spaces["time_series"].shape # (window_size, features)
-        port_shape = observation_space.spaces["portfolio_features"].shape # (4,)
+        # 1. Lấy thông số từ không gian quan sát
+        ts_shape = observation_space.spaces["time_series"].shape
+        port_shape = observation_space.spaces["portfolio_features"].shape
         
-        window_size = ts_shape[0] 
         num_ts_features = ts_shape[1]  
         port_input_dim = port_shape[0]
         
-        # --- CẤU HÌNH SIÊU THAM SỐ ---
-        self.lstm_hidden_dim = 64 # Giữ 64 để tương đương với sức mạnh của GRU bạn đang dùng
-        mlp_summary_out_dim = 512
+        # 2. Normalization đầu vào
+        self.input_norm = nn.LayerNorm(num_ts_features)
         
-        # 1. Nhánh LSTM
+        # 3. Cấu hình LSTM (Để 128 cho giống GRU của bạn)
+        self.lstm_hidden_dim = 128
+        
         self.lstm = nn.LSTM(
             input_size=num_ts_features,
             hidden_size=self.lstm_hidden_dim,
             num_layers=1,
             batch_first=True,
-        ) 
+        )       
         
-        # 2. Khối tóm tắt chuỗi (Flatten All Hidden States)
-        # Chiều sau khi Flatten = window_size * lstm_hidden_dim
-        self.lstm_flatten_dim = window_size * self.lstm_hidden_dim
+        # 4. Attention Mechanism (Dùng lại class TemporalAttention bạn đã viết)
+        self.attention = TemporalAttention(self.lstm_hidden_dim)
         
-        self.mlp_summary = nn.Sequential(
-            nn.LayerNorm(self.lstm_flatten_dim),
-            nn.Linear(self.lstm_flatten_dim, mlp_summary_out_dim),
-            nn.GELU(),
-        )
+        # 5. LayerNorm sau Attention
+        self.layer_norm = nn.LayerNorm(self.lstm_hidden_dim)
         
-        # 3. Khối Fusion (Kết hợp TS Features + Portfolio Features)
-        concat_dim = mlp_summary_out_dim + port_input_dim
+        # 6. Fusion MLP (Kết hợp TS Features + Portfolio Features)
+        concat_dim = self.lstm_hidden_dim + port_input_dim
         
         self.fusion_mlp = nn.Sequential(
             nn.LayerNorm(concat_dim),
@@ -137,36 +129,38 @@ class LSTMExtractor(BaseFeaturesExtractor):
         self._initialize_weights()
         
     def _initialize_weights(self):
-        # Khởi tạo trọng số cho LSTM (Khác một chút so với GRU do có nhiều cổng hơn)
         for name, param in self.lstm.named_parameters():
             if 'weight_ih' in name:
                 nn.init.xavier_uniform_(param.data)
             elif 'weight_hh' in name:
                 nn.init.orthogonal_(param.data)
             elif 'bias' in name:
-                # Kỹ thuật chuyên gia: Để forget gate bias ban đầu cao (1.0) 
-                # giúp mạng dễ học các phụ thuộc dài hạn ngay từ đầu
+                # Kỹ thuật cho LSTM: Khởi tạo forget gate bias = 1
                 nn.init.zeros_(param.data)
                 n = param.size(0)
-                param.data[n//4:n//2].fill_(1.0) # Forget gate bias
+                # Trong PyTorch LSTM bias sắp xếp theo: [b_ii, b_if, b_ig, b_io]
+                # Ta set b_if (forget gate) thành 1
+                param.data[n//4:n//2].fill_(1.0)
 
     def forward(self, observations: dict) -> th.Tensor:
         ts_data = observations["time_series"]
         port_data = observations["portfolio_features"]
         
-        # 1. Chạy qua LSTM 
-        # LSTM trả về: (output, (h_n, c_n))
-        # output chứa toàn bộ hidden states của tất cả các timesteps
+        # Bước 1: Chuẩn hóa đầu vào
+        ts_data = self.input_norm(ts_data)
+            
+        # Bước 2: Qua LSTM (Lấy toàn bộ sequence output)
+        # LSTM trả về (output, (h_n, c_n)) -> ta chỉ lấy output
         lstm_out, _ = self.lstm(ts_data)
         
-        # 2. Trải phẳng (Flatten) toàn bộ hidden states (Batch, Window * Hidden)
-        lstm_out_flat = lstm_out.reshape(lstm_out.shape[0], -1)
+        # Bước 3: Qua Attention để tóm tắt chuỗi thành 1 context vector
+        context_vector = self.attention(lstm_out)
+        context_vector_norm = self.layer_norm(context_vector)
         
-        # 3. Đưa qua MLP để nén/tóm tắt đặc trưng thời gian
-        ts_features = self.mlp_summary(lstm_out_flat)
+        # Bước 4: Concatenate với dữ liệu portfolio
+        combined = th.cat([context_vector_norm, port_data], dim=1) 
         
-        # 4. Gộp với Portfolio và xuất ra Features cuối cùng
-        combined = th.cat([ts_features, port_data], dim=1) 
+        # Bước 5: Fusion qua MLP cuối cùng
         return self.fusion_mlp(combined)
 
 class CNN1DExtractor(BaseFeaturesExtractor):

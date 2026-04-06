@@ -44,9 +44,9 @@ if __name__ == "__main__":
     print('Loading data...')
     for key, value in info.items():
         data = load_data(value)
-        train_data = data[(data.index >= '2020-01-01') & (data.index < '2024-01-01')]
-        eval_data = data[(data.index >= '2024-01-01') & (data.index < '2024-06-01')]
-        test_data = data[(data.index >= '2024-06-01') & (data.index <= '2026-03-31')]
+        train_data = data[(data.index >= '2020-01-01') & (data.index < '2024-03-01')]
+        eval_data = data[(data.index >= '2024-03-01') & (data.index < '2024-09-01')]
+        test_data = data[(data.index >= '2024-09-01') & (data.index <= '2026-03-31')]
         price_cols = ['open', 'high', 'low', 'close', 'volume']
         feature_cols = [col for col in train_data.columns if col not in price_cols]
         scaler = StandardScaler()

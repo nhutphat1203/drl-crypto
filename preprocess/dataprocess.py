@@ -30,8 +30,6 @@ def pre_process(df):
         volatility_h = data['log_ret_1'].rolling(window=h).std()
         data[f'volatility_{h}_ratio'] = data['volatility_4'] / (volatility_h + EPSILON)
 
-    # Normalized Spread
-    data['spread_hl_norm'] = np.log(data['high'] / (data['low'] + EPSILON)) / (data['volatility_4'] + EPSILON)
 
     # 4. Microstructure & Volume Dynamics
     typical_price = ta.TYPPRICE(data['high'], data['low'], data['close'])
@@ -49,7 +47,15 @@ def pre_process(df):
     data['bb_percent_b'] = (data['close'] - lower) / (upper - lower + EPSILON)
     # 4. ADX (Average Directional Index) - Trend Strength
     data['adx_14'] = ta.ADX(data['high'], data['low'], data['close'], timeperiod=14) / 100.0
-
+    # 5. MFI (Money Flow Index) - Volume-weighted Momentum
+    # MFI thường dao động từ 0-100, chia 100 để đưa về [0, 1]
+    data['mfi_14'] = ta.MFI(data['high'], data['low'], data['close'], data['volume'], timeperiod=14) / 100.0
+    # 6. Williams %R - Price Position in Range
+    # Williams %R mặc định của TA-Lib chạy từ -100 đến 0. 
+    # Ta có thể đưa về [0, 1] bằng cách: (giá trị + 100) / 100
+    # Hoặc để nguyên từ -1 đến 0 bằng cách chia 100.
+    data['williams_r_14'] = (ta.WILLR(data['high'], data['low'], data['close'], timeperiod=14) + 100.0) / 100.0
+    
     data = data.loc[(data.index >= '2020-01-01') & (data.index < '2026-04-01')]
     data = data.dropna()
     return data

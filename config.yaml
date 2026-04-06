@@ -5,20 +5,20 @@ settings:
   checkpoint_freq: 200000       
   checkpoint_name_pfx: "model_checkpoint"
   best_model_save_path: "best_model"
-  eval_freq: 120000            
+  eval_freq: 100000            
   tensorboard_log: "tensorboard/"
   device: "cuda"               
   train_verbose: 1
   eval_verbose: 1
 
 model_env:
-  window_size: 24        
+  window_size: 16        
   initial_balance: 100000
   tick_per_episode: 2160      
   seed: 719723
 
 parameters:
-  total_timesteps: 2300000  
+  total_timesteps: 2600000  
   learning_rate: 9e-5
   gamma: 0.99
   n_steps: 2048               

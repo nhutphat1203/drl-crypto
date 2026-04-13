@@ -67,14 +67,14 @@ class Market(gym.Env):
         terminated = account_state.terminated
         truncated = self.current_data.no_more_data
         reward = account_state.reward
+        info = self._info()
+        info['timestamp'] = self.current_data.ohlcv.timestamp
+        info['price'] = self.current_data.ohlcv.open
+        info['action'] = scalar_action
+        info['reward'] = reward
         if not (terminated or truncated):
             self.current_data = self.episode.next()
         obs = self._obs(self.current_data, account_state.portfolio_features)
-        info = self._info()
-        info['timestamp'] = self.current_data.ohlcv.timestamp
-        info['price'] = self.current_data.ohlcv.close
-        info['action'] = scalar_action
-        info['reward'] = reward
 
         if (terminated or truncated) and self.verbose > 0:
             print(f"Name: {self.name}")

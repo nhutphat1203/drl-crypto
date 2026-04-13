@@ -84,7 +84,8 @@ def signal_model(model, env):
             {
                 "timestamp": current_info["timestamp"],
                 "equity": current_info["equity"],
-                "action": current_info["action"]
+                "action": current_info["action"],
+                "price": current_info["price"]
             }
         )
     df = pd.DataFrame(history)

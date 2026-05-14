@@ -45,8 +45,8 @@ Các nhóm thư viện cốt lõi bao gồm:
 Các bước chạy được đóng gói trong scripts/
 1. Tùy chỉnh các tham số cần thiết trong tệp `config.yaml`.
 2. Tải dữ liệu bằng `scripts/download_data.py`
-3. Tiền xử lý data bằng `scripts/preprocess_*.py`
-4. Chuẩn hóa bằng `scripts/normalized_data.py`
+3. Tiền xử lý data bằng `scripts/preprocess_data.py`
+4. Chuẩn hóa bằng `scripts/normalize_data.py`
 5. Huấn luyện agent bằng `scripts/train.py`
 6. Sử dụng agent để giao dịch và lấy dữ liệu môi trường bằng `scripts/get_signal.py`
 7. Backtest bằng `scripts/test.py`
